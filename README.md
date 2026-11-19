@@ -89,6 +89,8 @@ python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o
 
 `--keepout X0,Y0,X1,Y1` (repeatable) reserves a rectangle no bank may overlap, for example the aisle
 between the bank groups: `--keepout 1044.5,0,1405,2200`.
+The published results reserve both the aisle and the space above the bank array, kept for logic:
+`--keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200`.
 
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
 straight-line score. The bank spacing, die margin, pin keep-out and grid step are our choices, at

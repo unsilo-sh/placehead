@@ -137,6 +137,7 @@ svg .axis { stroke: var(--faint); }
           <span><i class="ln" style="border-color:var(--sel)"></i>moved bank, from its start</span>
           <span><i class="ln" style="border-color:var(--path);border-top-style:dashed"></i>the worst path</span>
           <span><i class="sw" style="background:var(--ink);width:3px"></i>pin edge</span>
+          <span id="koLegend" hidden><i class="sw" style="background:repeating-linear-gradient(135deg, var(--faint) 0 2px, transparent 2px 6px)"></i>reserved: no bank may go here</span>
         </div>
         <canvas id="fp"></canvas>
       </section>
@@ -295,6 +296,17 @@ function drawFP() {
   ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath();
   ctx.moveTo(X(g.die[0]), Y(Math.min(g.die[3], V.top))); ctx.lineTo(X(g.die[0]), Y(g.die[1])); ctx.lineTo(X(g.die[2]), Y(g.die[1])); ctx.lineTo(X(g.die[2]), Y(Math.min(g.die[3], V.top)));
   ctx.stroke();
+  // reserved rectangles, hatched
+  const ko = (R.settings.KEEPOUTS || []);
+  $("koLegend").hidden = !ko.length;
+  for (const [a, b, c, d] of ko) {
+    const x0 = X(Math.max(a, g.die[0])), x1 = X(Math.min(c, g.die[2])), y0 = Y(Math.min(d, V.top)), y1 = Y(Math.max(b, g.die[1]));
+    if (x1 <= x0 || y1 <= y0) continue;
+    ctx.save(); ctx.beginPath(); ctx.rect(x0, y0, x1 - x0, y1 - y0); ctx.clip();
+    ctx.strokeStyle = C.line; ctx.globalAlpha = 0.45; ctx.lineWidth = 1; ctx.beginPath();
+    for (let t = -(y1 - y0); t < x1 - x0; t += 8) { ctx.moveTo(x0 + t, y1); ctx.lineTo(x0 + t + (y1 - y0), y0); }
+    ctx.stroke(); ctx.restore();
+  }
   if (V.top < g.die[3]) { ctx.fillStyle = C.muted; ctx.font = `11px ${css("--font-body")}`; ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.fillText(`die continues, empty, to y = ${fmt(g.die[3])} µm`, X(g.die[0]) + 8, Y(V.top) + 6); }
 
@@ -412,7 +424,8 @@ function limits() {
     `<b>Bounds, not placements.</b> Each path is the straight line between its two ends. A placer adds detours: today's gates add ${pct(R.base.now.total, R.base.line.total).replace("+", "")} to the start's total.`,
     `<b>The total leans on write enable.</b> Of the ${R.geometry.bank_pins} bank pins on cone paths, 32 per bank are w_mask_in on the we net, so the we pin weighs heavily.`,
     `<b>A greedy search.</b> Port moves first, then one bank move at a time. A better sequence may exist.`,
-    `<b>Our choices.</b> Banks keep ${s.GAP} µm apart, ${s.MARGIN} µm from the die edge and ${s.PIN_KEEPOUT} µm above the pin row, on a ${s.STEP} µm grid.`,
+    `<b>Our choices.</b> Banks keep ${s.GAP} µm apart, ${s.MARGIN} µm from the die edge and ${s.PIN_KEEPOUT} µm above the pin row, on a ${s.STEP} µm grid.`
+      + ((s.KEEPOUTS || []).length ? ` Reserved, hatched: ${s.KEEPOUTS.map(k => `x ${fmt(k[0])}–${fmt(k[2])}, y ${fmt(k[1])}–${fmt(k[3])} µm`).join("; ")}.` : ""),
     `<b>Out of scope.</b> Paths outside def2graph's cones: the write data from the wreg flops, and rdata_r.`,
   ].map(x => `<li>${x}</li>`).join("");
 }
