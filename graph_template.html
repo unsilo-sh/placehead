@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>__DESIGN__ Port Cones</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -9,6 +10,7 @@
   --bg: #f4f6f8; --panel: #ffffff; --ink: #14181d; --muted: #59626d; --faint: #8a939d;
   --line: #dde2e7; --die: #fbfcfd;
   --comb: #b4bcc5; --flop: #2a78d6; --mem: #eb6834; --port: #1baf7a; --sel: #6250d6;
+  --win: #2a78d6; --wout: #1baf7a;
   --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
   --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -16,11 +18,13 @@
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
   --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
   --line: #2a3037; --die: #12161a;
-  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9; color-scheme: dark } }
+  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9;
+  --win: #3987e5; --wout: #199e70; color-scheme: dark } }
 :root[data-theme="dark"] {
   --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
   --line: #2a3037; --die: #12161a;
-  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9; color-scheme: dark }
+  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9;
+  --win: #3987e5; --wout: #199e70; color-scheme: dark }
 
 *, *::before, *::after { box-sizing: border-box; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
@@ -47,6 +51,8 @@ h2 { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin
 .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ln { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+.ln.dash { border-top-style: dashed; }
 .btns { margin-left: auto; display: flex; gap: 6px; }
 button { font: inherit; }
 .btn { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
@@ -117,7 +123,10 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
           <span><i class="sw" style="background:var(--flop)"></i>flop</span>
           <span><i class="sw" style="background:var(--comb)"></i>logic gate</span>
           <span><i class="sw" style="background:var(--port)"></i>top-level pin</span>
-          <span><i class="sw" style="background:var(--sel)"></i>cone wire</span>
+          <span><i class="ln" style="border-color:var(--sel)"></i>pin's cone</span>
+          <span><i class="ln" style="border-color:var(--win)"></i>into bank</span>
+          <span><i class="ln" style="border-color:var(--wout)"></i>out of bank</span>
+          <span><i class="ln dash" style="border-color:var(--faint)"></i>outside every cone</span>
         </div>
         <div class="btns">
           <button class="btn" id="zPins" type="button">Zoom to pins</button>
@@ -125,7 +134,7 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
         </div>
       </div>
       <canvas id="fp"></canvas>
-      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it. Wires are straight lines from driver to sink, not routes.</div>
+      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
     </section>
 
     <div class="side">
@@ -147,8 +156,8 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
       <div class="svgbox" id="matrix"></div>
     </section>
     <section class="card chart">
-      <h2>Distance against logic depth</h2>
-      <p class="sub">One dot per cone endpoint. Distance is Manhattan, from the pin to the centre of the endpoint cell, in µm. Depth is def2graph's count of cells on the path, the endpoint included. Click a dot to select its pin.</p>
+      <h2>Wire length against logic depth</h2>
+      <p class="sub">One dot per cone endpoint. Wire length is the sum of pin-to-pin Manhattan distances along the longest path from the top-level pin to the endpoint pin, through the cone's gates. With no routing, it is a lower bound. Depth is def2graph's count of cells on the path, the endpoint included. Click a dot to select its pin.</p>
       <div class="svgbox" id="scatter"></div>
     </section>
   </div>
@@ -176,10 +185,8 @@ const banks = D.inst.map((r, i) => i).filter(i => D.kinds[D.inst[i][1]] === "mem
 
 const ends = [];   // one per (pin, endpoint)
 for (const [pn, c] of Object.entries(D.cones)) {
-  const [px, py] = center(portIdx[pn]);
-  for (const [i, pin, type, depth] of c.e) {
-    const [cx, cy] = center(i);
-    ends.push({ port: pn, i, pin: pin || "", type, depth, dist: Math.abs(px - cx) + Math.abs(py - cy) });
+  for (const [i, pin, type, depth, len] of c.e) {
+    ends.push({ port: pn, i, pin: pin || "", type, depth, dist: len });
   }
 }
 const buses = [...new Set(D.ports.map(p => busOf(p[0])))].sort();
@@ -232,11 +239,10 @@ function selection() {
   if (!sel) return null;
   if (sel.kind === "port") {
     const c = D.cones[sel.name];
-    return { members: new Set(c.m.concat([portIdx[sel.name]])), wires: c.w, ends: c.e.map(e => e[0]), focus: portIdx[sel.name] };
+    return { members: new Set(c.m.concat([portIdx[sel.name]])), groups: [["--sel", c.s]], ends: c.e.map(e => e[0]), focus: portIdx[sel.name] };
   }
-  const reach = ends.filter(e => e.i === sel.i);
-  const ps = [...new Set(reach.map(e => portIdx[e.port]))];
-  return { members: new Set(ps.concat([sel.i])), wires: ps.map(p => [p, sel.i]), ends: [sel.i], focus: sel.i, rays: true };
+  const b = D.banks[nameOf(sel.i)];
+  return { members: new Set([sel.i]), groups: [["--win", b.in], ["--wout", b.out]], ends: [sel.i], focus: sel.i };
 }
 
 function drawFP() {
@@ -273,10 +279,14 @@ function drawFP() {
   }
   ctx.globalAlpha = 1;
   if (S) {
-    ctx.strokeStyle = C.sel; ctx.lineWidth = S.rays ? 1 : 1.2; ctx.globalAlpha = S.rays ? 0.45 : 0.75;
-    ctx.beginPath();
-    for (const [a, b] of S.wires) { const [ax, ay] = center(a), [bx, by] = center(b); ctx.moveTo(sx(ax), sy(ay)); ctx.lineTo(sx(bx), sy(by)); }
-    ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85;
+    for (const [tok, ks] of S.groups) for (const dashed of [0, 1]) {
+      ctx.strokeStyle = css(tok); ctx.setLineDash(dashed ? [5, 4] : []); ctx.beginPath();
+      for (const k of ks) { if (!D.segInCone[k] !== !!dashed) continue;
+        const q = D.segs[k]; ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); }
+      ctx.stroke();
+    }
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
     for (const i of S.ends) { if (i >= NI || D.kinds[D.inst[i][1]] === "memory") continue;
       const [x, y] = center(i); ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.strokeStyle = C.sel; ctx.lineWidth = 1.5; ctx.stroke(); }
     const [fx, fy] = center(S.focus);
@@ -350,7 +360,7 @@ function renderSel() {
     const c = D.cones[sel.name], es = ends.filter(e => e.port === sel.name);
     const by = t => es.filter(e => e.type === t);
     const bankRows = {};
-    for (const e of by("memory")) { const b = nameOf(e.i); const r = bankRows[b] ||= { b, n: 0, dmin: 99, dist: e.dist }; r.n++; r.dmin = Math.min(r.dmin, e.depth); }
+    for (const e of by("memory")) { const b = nameOf(e.i); const r = bankRows[b] ||= { b, n: 0, dmin: 99, dist: 0 }; r.n++; r.dmin = Math.min(r.dmin, e.depth); r.dist = Math.max(r.dist, e.dist); }
     const rows = Object.values(bankRows).sort((a, b) => a.dist - b.dist);
     const flops = by("flop");
     el.innerHTML = `<div class="sel-head"><span class="sel-name">${esc(sel.name)}</span>
@@ -363,7 +373,7 @@ function renderSel() {
       </div>
       <p class="note">${by("memory").length} on memory, ${flops.length} on flops${by("port").length ? `, ${by("port").length} on other pins` : ""}.
         ${flops.length ? `Flops reached: ${[...new Set(flops.map(e => nameOf(e.i)))].slice(0, 6).map(esc).join(", ")}${flops.length > 6 ? "…" : ""}.` : ""}</p>
-      ${rows.length ? `<div class="tscroll"><table><thead><tr><th>Bank</th><th class="n">Pins</th><th class="n">Min depth</th><th class="n">Distance µm</th></tr></thead>
+      ${rows.length ? `<div class="tscroll"><table><thead><tr><th>Bank</th><th class="n">Pins</th><th class="n">Min depth</th><th class="n">Wire µm</th></tr></thead>
         <tbody>${rows.map(r => `<tr><td class="mono">${esc(r.b)}</td><td class="n">${r.n}</td><td class="n">${r.dmin}</td><td class="n">${fmt(r.dist)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
   } else {
     const name = nameOf(sel.i), b = D.banks[name], es = ends.filter(e => e.i === sel.i);
@@ -382,6 +392,7 @@ function renderSel() {
         <div class="bar"><i style="width:${(pct * 100).toFixed(1)}%"></i></div></div>
       <table><thead><tr><th>Pin group</th><th class="n">In a cone</th><th class="n">Signal pins</th></tr></thead>
         <tbody>${Object.entries(b.groups).map(([g, [n, r]]) => `<tr><td class="mono">${esc(g)}</td><td class="n">${r}</td><td class="n">${n}</td></tr>`).join("")}</tbody></table>
+      <p class="note">${b.in.length} wires into the bank and ${b.out.length} out of it, traced back to a flop or a top-level pin and forward to the same. ${b.in.concat(b.out).filter(k => !D.segInCone[k]).length} of them are outside every def2graph cone (dashed).</p>
       <p class="note">Top-level pins by bus: ${Object.entries(perBus).map(([k, v]) => `<span class="mono">${esc(k)}</span> ${v}`).join(", ") || "none"}.</p>`;
   }
   $("clr").onclick = () => select(null);
@@ -411,7 +422,7 @@ const RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", 
 function drawMatrix() {
   const M = {}; let max = 0;
   for (const e of ends) if (e.type === "memory") { const k = busOf(e.port) + "|" + e.i;
-    const m = M[k] ||= { n: 0, dmin: 99, dmax: 0, dist: 0 }; m.n++; m.dmin = Math.min(m.dmin, e.depth); m.dmax = Math.max(m.dmax, e.depth); m.dist += e.dist; max = Math.max(max, m.n); }
+    const m = M[k] ||= { n: 0, dmin: 99, dmax: 0, dist: 0 }; m.n++; m.dmin = Math.min(m.dmin, e.depth); m.dmax = Math.max(m.dmax, e.depth); m.dist = Math.max(m.dist, e.dist); max = Math.max(max, m.n); }
   const cw = 30, ch = 26, left = 76, topM = 34;
   const w = left + banks.length * cw + 4, h = topM + buses.length * ch + 4;
   let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Endpoints per bus and bank">`;
@@ -425,7 +436,7 @@ function drawMatrix() {
       if (!m) { s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="none" stroke="var(--line)"/>`; return; }
       const step = Math.min(RAMP.length - 1, Math.floor((m.n / max) * (RAMP.length - 1) + 0.0001));
       const fill = RAMP[Math.max(1, step)], ink = step >= 3 ? "#ffffff" : "#14181d";
-      s += `<g class="cellr" data-b="${b}" data-tip="<b>${esc(bus)}</b> → <b>${esc(nameOf(b))}</b><br>${m.n} endpoints, depth ${m.dmin}–${m.dmax}<br>mean distance ${fmt(m.dist / m.n)} µm">
+      s += `<g class="cellr" data-b="${b}" data-tip="<b>${esc(bus)}</b> → <b>${esc(nameOf(b))}</b><br>${m.n} endpoints, depth ${m.dmin}–${m.dmax}<br>longest wire path ${fmt(m.dist)} µm">
         <rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${fill}" ${on ? 'stroke="var(--sel)" stroke-width="2.5"' : ""}/>
         <text x="${x + cw / 2}" y="${y + ch / 2 + 4}" text-anchor="middle" style="fill:${ink};font-size:10.5px;font-family:var(--font-mono)">${m.n}</text></g>`;
     });
@@ -448,7 +459,7 @@ function drawScatter() {
   for (let v = 0; v <= xmax; v += step) s += `<line class="grid" x1="${X(v)}" x2="${X(v)}" y1="${T}" y2="${T + ph}"/><text x="${X(v)}" y="${T + ph + 16}" text-anchor="middle">${v}</text>`;
   for (let v = 0; v <= ymax; v += 2) s += `<line class="grid" x1="${L}" x2="${L + pw}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
   s += `<line class="axis" x1="${L}" x2="${L + pw}" y1="${T + ph}" y2="${T + ph}"/>`;
-  s += `<text x="${L + pw / 2}" y="${h - 6}" text-anchor="middle">distance from pin, µm</text>`;
+  s += `<text x="${L + pw / 2}" y="${h - 6}" text-anchor="middle">wire length along the path, µm</text>`;
   s += `<text transform="translate(12 ${T + ph / 2}) rotate(-90)" text-anchor="middle">logic depth</text>`;
   const selName = sel && sel.kind === "port" ? sel.name : null, selBank = sel && sel.kind === "bank" ? sel.i : null;
   const on = e => (selName && e.port === selName) || (selBank !== null && e.i === selBank);

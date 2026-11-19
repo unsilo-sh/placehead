@@ -25,6 +25,7 @@ combinationally and through flops, with read data flowing back to output ports.
 | `sparse_mem_core_placed.def` | The placed DEF — ready-to-use def2graph input |
 | `placement.png` | Floorplan figure above, drawn by `plot_placement.py` from def2graph's output |
 | `plot_placement.py` | Draws the placement from def2graph's `nodes.parquet` and the DEF's `DIEAREA` |
+| `make_graph_html.py`, `graph_template.html` | Build `graph.html`: def2graph's cones and every bank's wires on the placement, with pin positions from the LEF |
 | `fetch_pdk.sh` | Downloads the Nangate45 and fakeram45 LEF and Liberty files into `pdk/` (not checked in) |
 
 ## Structure
@@ -56,6 +57,7 @@ PYTHONPATH=/path/to/factory/adapters/def2graph python3 -m def2graph \
   --def sparse_mem_core_placed.def --lef pdk/*.lef --lib pdk/*.lib \
   --out out/sparse_mem --formats parquet json
 python3 plot_placement.py --def sparse_mem_core_placed.def --graph out/sparse_mem -o placement.png
+python3 make_graph_html.py --def sparse_mem_core_placed.def --lef pdk/*.lef --graph out/sparse_mem -o graph.html
 ```
 
 Expected: `fakeram45_64x32` classified as **memory**, **16/16 banks** detected as
