@@ -19,9 +19,9 @@ KINDS = ["comb", "flop", "memory"]
 
 
 def read_def(def_path, macros):
-    """Die area (DEF units) and, per macro instance, the pins its signal nets connect."""
-    die, pins = None, defaultdict(set)
-    in_nets = False
+    """Die area (DEF units) and, per macro instance, each pin its signal nets connect and that net."""
+    die, pins = None, defaultdict(dict)
+    in_nets, net = False, None
     pin_re = re.compile(r"\(\s*(\S+)\s+(\S+)\s*\)")
     with open(def_path) as f:
         for line in f:
@@ -34,9 +34,12 @@ def read_def(def_path, macros):
             elif re.match(r"\s*END\s+NETS", line):
                 in_nets = False
             elif in_nets:
+                m = re.match(r"\s*-\s+(\S+)", line)
+                if m:
+                    net = m.group(1)
                 for inst, pin in pin_re.findall(line):
                     if inst in macros:
-                        pins[inst].add(pin)
+                        pins[inst][pin] = net
     if die is None:
         raise ValueError(f"no DIEAREA in {def_path}")
     return die, pins
@@ -78,7 +81,7 @@ def main(argv=None):
     data_ports = [[r.name, r.direction[0], um(r.x), um(r.y)] for r in ports.itertuples()]
 
     data_cones = {}
-    reached = defaultdict(set)
+    cone_nets = set()
     for name, c in cones.items():
         drivers, sinks = defaultdict(list), defaultdict(list)
         for a, b in c["edges"]:
@@ -90,25 +93,27 @@ def main(argv=None):
                         for d in drivers.get(net, []) for s in sinks.get(net, [])
                         if d in idx and s in idx})
         members = sorted({idx[n] for n in c["nodes"] if n in idx})
+        cone_nets.update(n[2:] for n in c["nodes"] if n.startswith("N:"))
         ends = []
         for e in c["endpoints"]:
             key = ("I:" if e["type"] != "port" else "P:") + e["instance"]
             if key not in idx:
                 continue
             ends.append([idx[key], e["pin"], e["type"], e["depth"]])
-            if e["type"] == "memory":
-                reached[e["instance"]].add(e["pin"])
         data_cones[name] = {"d": c["direction"][0], "m": members, "w": [list(w) for w in wires],
                             "e": ends, "depth": c["max_depth"]}
 
     banks = {}
     for b in sorted(macros):
-        allp, got = macro_pins.get(b, set()), reached.get(b, set())
+        # A pin is inside a cone when its net is. def2graph lists one endpoint
+        # pin per instance on a net, so its endpoints undercount.
+        allp = macro_pins.get(b, {})
+        got = {p for p, n in allp.items() if n in cone_nets}
         groups = defaultdict(lambda: [0, 0])
         for p in allp:
             groups[pin_group(p)][0] += 1
             groups[pin_group(p)][1] += p in got
-        banks[b] = {"pins": len(allp), "reached": len(got & allp),
+        banks[b] = {"pins": len(allp), "reached": len(got),
                     "groups": {k: v for k, v in sorted(groups.items())}}
 
     data = {
