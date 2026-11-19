@@ -74,3 +74,19 @@ placement coordinate. Union graph ≈ 9.2k nodes / 13k edges.
 On load, the viewer also looks for `graph.json` beside it. The published viewer has
 `out/sparse_mem_core.graph.json` there. A browser does not let a page opened from disk read
 files beside it, so open a local copy of `viewer.html` and load the JSON with the button.
+
+## Placement headroom
+
+`headroom.py` estimates how much shorter the port-to-memory paths get with a few moves:
+relocating or flipping a bank, or moving one bus's pins along the bottom edge. It scores a
+placement by the straight line between each path's two ends, the shortest a placer could make
+it, as the worst path and as the total over bank pins. For each port budget it makes the best
+port moves, then up to K bank moves, greedily.
+
+```bash
+python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o out/headroom.json
+```
+
+`--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
+straight-line score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
+the top of the file.
