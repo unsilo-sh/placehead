@@ -109,8 +109,8 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
   <div id="app" hidden>
     <section class="card pareto" aria-label="Variants tried">
       <div class="pareto-head"><h2>Variants tried</h2>
-        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs. A line joins each variant to the one it came from. Click a point to trace its path back to today; the floorplan and the move list follow it.</p>
-        <div class="seg" id="metricSeg"><button type="button" data-v="worst">Worst path</button><button type="button" data-v="total">Total</button></div></div>
+        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to trace its path back to today; the floorplan and the move list follow it.</p>
+        <div class="seg" id="metricSeg"><button type="button" data-v="worst">Moves × worst path</button><button type="button" data-v="total">Moves × total</button><button type="button" data-v="both">Worst path × total</button></div></div>
       <canvas id="pm"></canvas>
       <div class="plegend" id="plegend"></div>
     </section>
@@ -231,51 +231,63 @@ function drawPM() {
   const C = { bg: css("--panel"), line: css("--line"), faint: css("--faint"), muted: css("--muted"), ink: css("--ink"), sel: css("--sel"), path: css("--path"), mir: css("--bank-hi") };
   const KIND = { today: C.ink, port: C.sel, mirror: C.mir, bank: C.path };
   pctx.fillStyle = C.bg; pctx.fillRect(0, 0, W2, H2);
-  const vs = R.variants, val = v => v[state.metric], show = v => state.metric === "worst" ? `${fmt(v)} µm` : `${mm(v)} mm`;
+  const vs = R.variants, both = state.metric === "both";
+  const fx = v => both ? v.worst : v.depth, fy = v => both ? v.total : v[state.metric], val = fy;
   const dmax = Math.max(...vs.map(v => v.depth));
-  let y0 = Math.min(...vs.map(val)), y1 = Math.max(...vs.map(val)); const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad;
-  const L = 74, Rm = 210, T = 16, B = 40, w = W2 - L - Rm, h = H2 - T - B;
-  const X = d => L + d / Math.max(1, dmax) * w, Y = v => T + (1 - (v - y0) / (y1 - y0)) * h;
-  PV = { X, Y, val };
-  const base = val(vs[0]);
+  let x0 = both ? Math.min(...vs.map(fx)) : 0, x1 = both ? Math.max(...vs.map(fx)) : Math.max(1, dmax);
+  if (both) { const px = (x1 - x0) * 0.04; x0 -= px; x1 += px; }
+  let y0 = Math.min(...vs.map(fy)), y1 = Math.max(...vs.map(fy)); const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad;
+  const L = 74, Rm = both ? 280 : 210, T = both ? 26 : 16, B = 40, w = W2 - L - Rm, h = H2 - T - B;
+  const X = v => L + (v - x0) / (x1 - x0) * w, Y = v => T + (1 - (v - y0) / (y1 - y0)) * h;
+  const PX = v => X(fx(v)), PY = v => Y(fy(v));
+  PV = { PX, PY };
+  const base = fy(vs[0]), yMetric = both ? "total" : state.metric;
   // grid and axes: absolute on the left, against today on the right
   pctx.font = `11px ${css("--font-body")}`; pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.fillStyle = C.muted;
   const r6 = (y1 - y0) / 5, p10 = 10 ** Math.floor(Math.log10(r6)), sy_ = [1, 2, 2.5, 5, 10].map(m => m * p10).find(m => m >= r6);
   pctx.textAlign = "right"; pctx.textBaseline = "middle";
-  for (let v = Math.ceil(y0 / sy_) * sy_; v <= y1; v += sy_) { pctx.beginPath(); pctx.moveTo(L, Y(v)); pctx.lineTo(L + w, Y(v)); pctx.stroke(); pctx.fillText(state.metric === "worst" ? fmt(v) : mm(v), L - 8, Y(v)); }
+  for (let v = Math.ceil(y0 / sy_) * sy_; v <= y1; v += sy_) { pctx.beginPath(); pctx.moveTo(L, Y(v)); pctx.lineTo(L + w, Y(v)); pctx.stroke(); pctx.fillText(yMetric === "worst" ? fmt(v) : mm(v), L - 8, Y(v)); }
   pctx.textAlign = "center"; pctx.textBaseline = "top";
-  const sx_ = dmax > 20 ? 5 : dmax > 10 ? 2 : 1;
-  for (let d = 0; d <= dmax; d += sx_) pctx.fillText(d, X(d), T + h + 6);
-  pctx.textBaseline = "bottom"; pctx.fillText("moves from today", L + w / 2, H2 - 4);
+  if (both) {
+    const r = (x1 - x0) / 6, p = 10 ** Math.floor(Math.log10(r)), sx_ = [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= r);
+    for (let v = Math.ceil(x0 / sx_) * sx_; v <= x1; v += sx_) { pctx.beginPath(); pctx.moveTo(X(v), T); pctx.lineTo(X(v), T + h); pctx.stroke(); pctx.fillText(fmt(v), X(v), T + h + 6); }
+    pctx.fillStyle = css("--faint"); pctx.textBaseline = "bottom";
+    for (const g of [10, 20, 30, 40]) { const v = vs[0].worst * (1 - g / 100); if (v >= x0 && v <= x1) pctx.fillText(`−${g}%`, X(v), T - 4); }
+    pctx.fillStyle = C.muted;
+  } else {
+    const sx_ = dmax > 20 ? 5 : dmax > 10 ? 2 : 1;
+    for (let d = 0; d <= dmax; d += sx_) pctx.fillText(d, X(d), T + h + 6);
+  }
+  pctx.textBaseline = "bottom"; pctx.fillText(both ? "worst path, µm" : "moves from today", L + w / 2, H2 - 4);
   pctx.save(); pctx.translate(16, T + h / 2); pctx.rotate(-Math.PI / 2); pctx.textBaseline = "middle";
-  pctx.fillText(state.metric === "worst" ? "worst path, µm" : "total, mm", 0, 0); pctx.restore();
+  pctx.fillText(yMetric === "worst" ? "worst path, µm" : "total, mm", 0, 0); pctx.restore();
   pctx.textAlign = "left"; pctx.textBaseline = "middle"; pctx.fillStyle = C.faint;
   for (const g of [10, 20, 30, 40]) { const v = base * (1 - g / 100); if (v >= y0 && v <= y1) pctx.fillText(`−${g}%`, L + w + 6, Y(v)); }
   // every variant joined to its parent
   pctx.strokeStyle = C.line; pctx.lineWidth = 1.2;
-  for (const v of vs) if (v.parent !== null) { const p = vs[v.parent]; pctx.beginPath(); pctx.moveTo(X(p.depth), Y(val(p))); pctx.lineTo(X(v.depth), Y(val(v))); pctx.stroke(); }
+  for (const v of vs) if (v.parent !== null) { const p = vs[v.parent]; pctx.beginPath(); pctx.moveTo(PX(p), PY(p)); pctx.lineTo(PX(v), PY(v)); pctx.stroke(); }
   // the selected variant's path back to today
   const path = pathTo(state.sel), on = new Set(path.map(v => v.id));
   pctx.strokeStyle = C.ink; pctx.lineWidth = 2.6; pctx.beginPath();
-  path.forEach((v, i) => i ? pctx.lineTo(X(v.depth), Y(val(v))) : pctx.moveTo(X(v.depth), Y(val(v)))); pctx.stroke();
+  path.forEach((v, i) => i ? pctx.lineTo(PX(v), PY(v)) : pctx.moveTo(PX(v), PY(v))); pctx.stroke();
   for (const v of vs) {
     const r = v.parent === null ? 6 : on.has(v.id) ? 5 : 3.6;
-    pctx.beginPath(); pctx.arc(X(v.depth), Y(val(v)), r, 0, Math.PI * 2); pctx.fillStyle = KIND[kindOf(v)] || C.muted; pctx.fill();
+    pctx.beginPath(); pctx.arc(PX(v), PY(v), r, 0, Math.PI * 2); pctx.fillStyle = KIND[kindOf(v)] || C.muted; pctx.fill();
     pctx.strokeStyle = C.bg; pctx.lineWidth = 1.5; pctx.stroke();
   }
   const s = vs[state.sel];
-  pctx.beginPath(); pctx.arc(X(s.depth), Y(val(s)), 9, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 2; pctx.stroke();
+  pctx.beginPath(); pctx.arc(PX(s), PY(s), 9, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 2; pctx.stroke();
   // name where each path ends, nudged apart
   const ends = new Map();
   for (const pth of R.paths) { const id = pth.path[pth.path.length - 1]; if (!ends.has(id)) ends.set(id, []); const t = viaLabel(pth.via); if (!ends.get(id).includes(t)) ends.get(id).push(t); }
-  const labels = [...ends].map(([id, names]) => ({ v: vs[id], text: names.join("; ") })).sort((a, b) => Y(val(a.v)) - Y(val(b.v)));
+  const labels = [...ends].map(([id, names]) => ({ v: vs[id], text: names.join("; ") })).sort((a, b) => PY(a.v) - PY(b.v));
   let lastY = -Infinity;
   pctx.font = `11px ${css("--font-body")}`; pctx.textAlign = "left"; pctx.textBaseline = "middle";
   for (const l of labels) {
-    const vy = Y(val(l.v)), ly = Math.max(vy, lastY + 14); lastY = ly;
+    const vy = PY(l.v), ly = Math.max(vy, lastY + 14); lastY = ly;
     const lx = L + w + 44;
-    pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.beginPath(); pctx.moveTo(X(l.v.depth) + 6, vy); pctx.lineTo(lx - 4, ly); pctx.stroke();
-    pctx.fillStyle = on.has(l.v.id) ? C.ink : C.muted; pctx.fillText(`${l.text}  ${pct(val(l.v), base)}`, lx, ly);
+    pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.beginPath(); pctx.moveTo(PX(l.v) + 6, vy); pctx.lineTo(lx - 4, ly); pctx.stroke();
+    pctx.fillStyle = on.has(l.v.id) ? C.ink : C.muted; pctx.fillText(`${l.text}  ${both ? `${pct(l.v.worst, vs[0].worst)} / ${pct(l.v.total, vs[0].total)}` : pct(fy(l.v), base)}`, lx, ly);
   }
   $("plegend").innerHTML = `
     <span><i class="dot" style="background:var(--ink)"></i>today</span>
@@ -289,7 +301,7 @@ function drawPM() {
 function nearestPM(e) {
   const r = pm.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
   let best = null, bd = 9;
-  for (const v of R.variants) { const d = Math.hypot(PV.X(v.depth) - mx, PV.Y(PV.val(v)) - my); if (d < bd) { bd = d; best = v; } }
+  for (const v of R.variants) { const d = Math.hypot(PV.PX(v) - mx, PV.PY(v) - my); if (d < bd) { bd = d; best = v; } }
   return best;
 }
 pm.addEventListener("pointermove", e => {
