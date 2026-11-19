@@ -1,0 +1,422 @@
+<meta charset="utf-8">
+<title>Placement Headroom Explorer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: controls, then the floorplan beside the scores and the move list, then the two curves, then the limits. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #14181d; --muted: #59626d; --faint: #8a939d;
+  --line: #dde2e7; --die: #fbfcfd;
+  --sel: #6250d6; --path: #c2185b; --pin: #8a939d;
+  --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a;
+  --bank-lo: #fde6d8; --bank-hi: #b4461b; --bank-ink: #14181d;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
+  --line: #2a3037; --die: #12161a; --sel: #9085e9; --path: #f06292; --pin: #6f7882;
+  --s0: #3987e5; --s1: #d95926; --s2: #199e70;
+  --bank-lo: #3a2a22; --bank-hi: #e0743f; --bank-ink: #f4ede9; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
+  --line: #2a3037; --die: #12161a; --sel: #9085e9; --path: #f06292; --pin: #6f7882;
+  --s0: #3987e5; --s1: #d95926; --s2: #199e70;
+  --bank-lo: #3a2a22; --bank-hi: #e0743f; --bank-ink: #f4ede9; color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+.wrap { padding-block: 24px 40px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 18px; }
+header { display: grid; gap: 6px; max-width: 1100px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 26px; margin: 0; text-wrap: balance; }
+h1 code { font-family: var(--font-mono); font-weight: 500; font-size: 0.9em; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0; }
+.sub { color: var(--muted); margin: 0; max-width: 78ch; line-height: 1.5; }
+.mono { font-family: var(--font-mono); }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); font-weight: 500; }
+.note { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; }
+.note.err { color: var(--path); }
+.loadbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+button { font: inherit; }
+.btn { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--faint); }
+.btn:focus-visible, .seg button:focus-visible, input:focus-visible, .move:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
+
+.controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: end; padding: 12px 14px; }
+.ctl { display: grid; gap: 6px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); background: var(--bg); color: var(--muted); padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); font-weight: 600; }
+.kbox { display: flex; align-items: center; gap: 8px; }
+#k { width: 200px; max-width: 50vw; accent-color: var(--sel); }
+.kval { font-family: var(--font-mono); font-size: 13px; min-width: 7ch; font-variant-numeric: tabular-nums; }
+
+#app { display: grid; gap: 18px; }
+#app[hidden] { display: none; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
+@media (max-width: 980px) { .main { grid-template-columns: minmax(0, 1fr); } }
+.fp-bar { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+.fp-bar span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 10px; border-radius: 2px; display: inline-block; }
+.ln { width: 18px; height: 0; border-top: 2px solid; display: inline-block; }
+.ramp { width: 70px; height: 10px; border-radius: 2px; display: inline-block; background: linear-gradient(90deg, var(--bank-lo), var(--bank-hi)); }
+#fp { display: block; width: 100%; height: 560px; touch-action: none; }
+.side { display: grid; gap: 18px; }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.tile { background: var(--panel); padding: 12px 14px; display: grid; gap: 4px; }
+.tile .v { font-family: var(--font-mono); font-size: 22px; font-variant-numeric: tabular-nums; }
+.tile .d { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tile .d b { color: var(--ink); font-weight: 600; }
+.tile.wide { grid-column: 1 / -1; }
+.moves { padding: 12px 0 6px; display: grid; gap: 6px; }
+.moves h2 { padding: 0 14px; }
+.mlist { display: grid; max-height: 380px; overflow: auto; }
+.move { display: grid; grid-template-columns: 46px minmax(0, 1fr); gap: 4px 8px; padding: 7px 14px; border: 0; border-top: 1px solid var(--line);
+  background: none; color: var(--ink); text-align: left; cursor: pointer; font-size: 12.5px; }
+.move:hover { background: var(--bg); }
+.move.future { color: var(--faint); }
+.move.current { background: color-mix(in srgb, var(--sel) 12%, transparent); }
+.move .tag { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; color: var(--muted); padding-top: 1px; }
+.move .tag.port { color: var(--sel); }
+.move .what { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.move .gain { grid-column: 2; font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 980px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { padding: 14px; display: grid; gap: 8px; align-content: start; }
+.svgbox { overflow-x: auto; }
+svg text { fill: var(--muted); font-family: var(--font-body); font-size: 11px; }
+svg .grid { stroke: var(--line); }
+svg .axis { stroke: var(--faint); }
+.limits { padding: 14px 16px; display: grid; gap: 10px; max-width: 1100px; }
+.limits ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.limits b { color: var(--ink); font-weight: 600; }
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; line-height: 1.45; box-shadow: 0 4px 14px rgb(0 0 0 / 0.15); max-width: 300px; }
+#tip b { font-family: var(--font-mono); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Placement headroom on <code id="dname">…</code></h1>
+    <p class="sub">How much shorter the port-to-memory paths get with a few moves. A bank move puts one memory bank somewhere legal or turns it. A port move moves one bus's pins along the bottom edge, and the other buses close up around it. Scores are straight-line wire lengths between a path's two ends: the shortest a placer could make them.</p>
+    <div class="loadbar">
+      <span class="label">Results</span>
+      <span id="src" class="mono">loading headroom.json…</span>
+      <button class="btn" id="openBtn" type="button">Open results file…</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+      <span id="loadmsg" class="note"></span>
+    </div>
+  </header>
+
+  <div id="app" hidden>
+    <section class="card controls" aria-label="Choose a result">
+      <div class="ctl"><span class="label">The search lowers first</span>
+        <div class="seg" id="objSeg"><button type="button" data-v="worst">The worst path</button><button type="button" data-v="total">The total</button></div></div>
+      <div class="ctl"><span class="label">Port moves allowed</span>
+        <div class="seg" id="portSeg"></div></div>
+      <div class="ctl"><span class="label">Bank moves</span>
+        <div class="kbox"><button class="btn" id="kPrev" type="button" aria-label="One bank move fewer">◀</button>
+          <input type="range" id="k" min="0" max="8" step="1" value="0" aria-label="Bank moves">
+          <button class="btn" id="kNext" type="button" aria-label="One bank move more">▶</button>
+          <span class="kval" id="kval"></span></div></div>
+    </section>
+
+    <div class="main">
+      <section class="card" aria-label="Floorplan">
+        <div class="fp-bar">
+          <span><i class="ramp"></i>bank colour: its worst path, short to long</span>
+          <span><i class="ln" style="border-color:var(--sel)"></i>moved bank, from its start</span>
+          <span><i class="ln" style="border-color:var(--path);border-top-style:dashed"></i>the worst path</span>
+          <span><i class="sw" style="background:var(--ink);width:3px"></i>pin edge</span>
+        </div>
+        <canvas id="fp"></canvas>
+      </section>
+      <div class="side">
+        <div class="tiles" id="tiles"></div>
+        <section class="card moves" aria-label="Moves"><h2>Moves, in the order the search made them</h2><div class="mlist" id="mlist"></div></section>
+      </div>
+    </div>
+
+    <div class="charts">
+      <section class="card chart"><h2>Worst path against bank moves</h2>
+        <p class="note">One line per port budget. Click a point to show that result.</p><div class="svgbox" id="cWorst"></div></section>
+      <section class="card chart"><h2>Total against bank moves</h2>
+        <p class="note">The total sums each bank pin's longest path. The dashed line is today's gates where they sit now.</p><div class="svgbox" id="cTotal"></div></section>
+    </div>
+
+    <section class="card limits" aria-label="Limits">
+      <h2>What these numbers leave out</h2>
+      <ul id="limits"></ul>
+      <h2>Next steps, not done yet</h2>
+      <ul>
+        <li><b>Gate area.</b> Reserve the channel for logic, or charge the moves for the area the gates need, so a move does not take the space the logic sits in.</li>
+        <li><b>A real placer.</b> Place two or three of these results with OpenROAD and measure the paths, to replace the bounds with real lengths.</li>
+      </ul>
+    </section>
+  </div>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+const FORMAT = "placehead-headroom/1";
+const $ = id => document.getElementById(id);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const fmt = v => Math.round(v).toLocaleString();
+const mm = v => (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 });
+const signed = (v, f = fmt) => Math.abs(v) < 0.5 ? "0" : `${v < 0 ? "−" : "+"}${f(Math.abs(v))}`;
+const pct = (v, b) => `${v <= b ? "−" : "+"}${Math.abs(100 * (v - b) / b).toFixed(0)}%`;
+let R = null, opened = false;
+const state = { objective: "worst", ports: 0, k: 0 };
+
+// ---- loading ----
+function check(d) {
+  if (!d || typeof d !== "object") return "The file is not a JSON object.";
+  if (d.format !== FORMAT) return `The file's format is "${d.format ?? "missing"}". This page reads "${FORMAT}". Write it with headroom.py.`;
+  return ["geometry", "base", "runs"].every(k => k in d) ? null : "The file has no geometry, base or runs.";
+}
+function load(d, source) {
+  const err = check(d);
+  if (err) { $("loadmsg").textContent = `Not loaded: ${err}`; $("loadmsg").className = "note err"; return; }
+  R = d; $("src").textContent = source; $("loadmsg").textContent = ""; $("app").hidden = false;
+  $("dname").textContent = d.geometry.design; document.title = `${d.geometry.design} Placement Headroom`;
+  const budgets = [...new Set(d.runs.map(r => r.port_budget))].sort();
+  $("portSeg").innerHTML = budgets.map(p => `<button type="button" data-v="${p}">${p}</button>`).join("");
+  state.ports = Math.max(...budgets); state.k = 0;
+  limits(); render();
+}
+function readFile(f) {
+  opened = true;
+  const r = new FileReader();
+  r.onload = () => { let d = null; try { d = JSON.parse(r.result); } catch (e) {} load(d, f.name); };
+  r.readAsText(f);
+}
+$("openBtn").onclick = () => $("file").click();
+$("file").onchange = e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; };
+addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging"); });
+addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragging"); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+fetch("headroom.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  .then(d => { if (!opened) load(d, "headroom.json"); })
+  .catch(e => { if (opened) return; $("src").textContent = "none";
+    $("loadmsg").textContent = `No headroom.json beside the page (${e.message}). Open a results file, or drop one here.`; });
+
+// ---- selection ----
+const run = (o = state.objective, p = state.ports) => R.runs.find(r => r.objective === o && r.port_budget === p);
+const step = () => { const r = run(); return r.steps[Math.min(state.k, r.steps.length - 1)]; };
+$("objSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.objective = b.dataset.v; render(); } });
+$("portSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.ports = +b.dataset.v; render(); } });
+$("k").addEventListener("input", e => { state.k = +e.target.value; render(); });
+$("kPrev").onclick = () => { state.k = Math.max(0, state.k - 1); render(); };
+$("kNext").onclick = () => { state.k = Math.min(run().steps.length - 1, state.k + 1); render(); };
+$("mlist").addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b) { state.k = +b.dataset.k; render(); } });
+
+function render() {
+  for (const b of $("objSeg").children) b.setAttribute("aria-pressed", String(b.dataset.v === state.objective));
+  for (const b of $("portSeg").children) b.setAttribute("aria-pressed", String(+b.dataset.v === state.ports));
+  const r = run(), n = r.steps.length - 1;
+  state.k = Math.min(state.k, n);
+  $("k").max = n; $("k").value = state.k;
+  $("kval").textContent = `${state.k} of ${n}`;
+  tiles(); moves(); drawFP(); chart("cWorst", "worst"); chart("cTotal", "total");
+}
+
+// ---- scores ----
+function tiles() {
+  const s = step(), b = R.base, pm = s.moves.filter(m => m.startsWith("port")).length, bm = s.moves.length - pm;
+  const wp = s.worst_path;
+  $("tiles").innerHTML = `
+    <div class="tile"><span class="label">Worst path</span><span class="v">${fmt(s.worst)} µm</span>
+      <span class="d"><b>${pct(s.worst, b.line.worst)}</b> from ${fmt(b.line.worst)} µm</span></div>
+    <div class="tile"><span class="label">Total</span><span class="v">${mm(s.total)} mm</span>
+      <span class="d"><b>${pct(s.total, b.line.total)}</b> from ${mm(b.line.total)} mm</span></div>
+    <div class="tile wide"><span class="label">Moves</span><span class="d"><b>${pm} port</b> and <b>${bm} bank</b>.
+      The worst path now runs from the <span class="mono">${esc(wp.port)}</span> pin to <span class="mono">${esc(wp.bank)}.${esc(wp.pin)}</span>.</span></div>
+    <div class="tile wide"><span class="label">Today's gates</span><span class="d">With the gates where they sit now, the start's total is
+      <b>${mm(b.now.total)} mm</b>, ${pct(b.now.total, b.line.total).replace("+", "")} more than its bound. Every number above is a bound.</span></div>`;
+}
+
+function moves() {
+  const r = run(), s = step(), all = r.steps[r.steps.length - 1].moves, ports = all.filter(m => m.startsWith("port"));
+  const rows = [];
+  ports.forEach(m => rows.push({ m, k: 0, port: true }));
+  r.steps.slice(1).forEach((st, i) => rows.push({ m: st.moves[st.moves.length - 1], k: i + 1, prev: r.steps[i], st }));
+  if (!rows.length) { $("mlist").innerHTML = `<p class="note" style="padding:8px 14px">No move lowers the score.</p>`; return; }
+  const start = `<button class="move ${state.k === 0 ? "current" : ""}" type="button" data-k="0">
+      <span class="tag">None</span><span class="what">no bank moves yet</span></button>`;
+  $("mlist").innerHTML = rows.map(x => {
+      const [kind, ...rest] = x.m.split(": ");
+      const gain = x.port ? `<span class="gain">applied before any bank move</span>`
+        : `<span class="gain">worst ${signed(x.st.worst - x.prev.worst)} µm, total ${signed(x.st.total - x.prev.total, mm)} mm</span>`;
+      const cls = x.port ? "" : (x.k === state.k ? "current" : x.k > state.k ? "future" : "");
+      return `<button class="move ${cls}" type="button" data-k="${x.k}">
+        <span class="tag ${x.port ? "port" : ""}">${kind}</span><span class="what">${esc(rest.join(": "))}</span>${gain}</button>`;
+    }).map((h, j) => j === ports.length ? start + h : h).join("") + (rows.length === ports.length ? start : "");
+}
+
+// ---- floorplan ----
+const cv = $("fp"), ctx = cv.getContext("2d");
+let W = 0, H = 0, V = null;
+function layout() {
+  const g = R.geometry, top = Math.max(...R.runs.flatMap(r => r.steps.flatMap(s => s.pos.map(p => p[1] + g.bank_size[1])))) + 50;
+  const x0 = g.die[0] - 20, x1 = g.die[2] + 20, y0 = g.die[1] - 150, y1 = Math.min(top, g.die[3] + 20);
+  const want = Math.round(Math.min(cv.clientWidth * (y1 - y0) / (x1 - x0), innerHeight * 0.8));
+  if (Math.abs(cv.clientHeight - want) > 1) cv.style.height = want + "px";
+  const dpr = devicePixelRatio || 1; W = cv.clientWidth; H = cv.clientHeight;
+  cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const s = Math.min(W / (x1 - x0), H / (y1 - y0));
+  V = { s, ox: (W - (x1 - x0) * s) / 2 - x0 * s, oy: (H - (y1 - y0) * s) / 2 + y1 * s, top: y1 };
+}
+const X = x => V.ox + x * V.s, Y = y => V.oy - y * V.s;
+function mix(a, b, t) { const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+  const A = p(a), B = p(b); return `rgb(${A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(",")})`; }
+function pinXY(order) {
+  const g = R.geometry, size = Object.fromEntries(g.groups), xy = {}; let x = g.pin_x0;
+  for (const b of order) { xy[b] = [x, x + (size[b] - 1) * g.pin_pitch]; x += size[b] * g.pin_pitch; }
+  return xy;
+}
+let hits = [];
+function drawFP() {
+  if (!R) return; layout();
+  const g = R.geometry, s = step(), [bw, bh] = g.bank_size, start = g.start_pos;
+  const C = { bg: css("--bg"), die: css("--die"), line: css("--faint"), ink: css("--ink"), sel: css("--sel"), path: css("--path"),
+    lo: css("--bank-lo"), hi: css("--bank-hi"), bankInk: css("--bank-ink"), muted: css("--muted"), pin: css("--pin") };
+  ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = C.die; ctx.fillRect(X(g.die[0]), Y(Math.min(g.die[3], V.top)), (g.die[2] - g.die[0]) * V.s, (Math.min(g.die[3], V.top) - g.die[1]) * V.s);
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath();
+  ctx.moveTo(X(g.die[0]), Y(Math.min(g.die[3], V.top))); ctx.lineTo(X(g.die[0]), Y(g.die[1])); ctx.lineTo(X(g.die[2]), Y(g.die[1])); ctx.lineTo(X(g.die[2]), Y(Math.min(g.die[3], V.top)));
+  ctx.stroke();
+  if (V.top < g.die[3]) { ctx.fillStyle = C.muted; ctx.font = `11px ${css("--font-body")}`; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(`die continues, empty, to y = ${fmt(g.die[3])} µm`, X(g.die[0]) + 8, Y(V.top) + 6); }
+
+  // banks: colour by worst path, scaled over every result so colours compare across steps
+  const all = R.runs.flatMap(r => r.steps.flatMap(st => st.bank_worst)), lo = Math.min(...all), hi = Math.max(...all);
+  hits = [];
+  const moved = s.pos.map((p, i) => Math.hypot(p[0] - start[i][0], p[1] - start[i][1]) > 0.5 || s.orient[i] !== "N");
+  for (let i = 0; i < s.pos.length; i++) if (moved[i]) {     // ghosts at the start
+    ctx.setLineDash([4, 3]); ctx.strokeStyle = C.sel; ctx.lineWidth = 1;
+    ctx.strokeRect(X(start[i][0]), Y(start[i][1] + bh), bw * V.s, bh * V.s); ctx.setLineDash([]);
+  }
+  for (let i = 0; i < s.pos.length; i++) {
+    const [x, y] = s.pos[i], t = (s.bank_worst[i] - lo) / Math.max(1, hi - lo);
+    ctx.fillStyle = mix(C.lo, C.hi, t); ctx.fillRect(X(x), Y(y + bh), bw * V.s, bh * V.s);
+    ctx.strokeStyle = moved[i] ? C.sel : C.line; ctx.lineWidth = moved[i] ? 2.5 : 1; ctx.strokeRect(X(x), Y(y + bh), bw * V.s, bh * V.s);
+    const left = g.pin_side[s.orient[i]] === "left";
+    ctx.fillStyle = C.ink; ctx.fillRect(left ? X(x) : X(x + bw) - 3, Y(y + bh), 3, bh * V.s);
+    if (bw * V.s > 30) { ctx.fillStyle = t > 0.55 ? "#ffffff" : C.bankInk; ctx.font = `600 ${Math.min(11, bw * V.s / 5)}px ${css("--font-mono")}`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(g.banks[i].replace("bank", "b"), X(x + bw / 2), Y(y + bh / 2)); }
+    hits.push({ i, x0: X(x), y0: Y(y + bh), x1: X(x + bw), y1: Y(y) });
+  }
+  for (let i = 0; i < s.pos.length; i++) if (moved[i]) {     // arrows from start to now
+    const a = [X(start[i][0] + bw / 2), Y(start[i][1] + bh / 2)], b = [X(s.pos[i][0] + bw / 2), Y(s.pos[i][1] + bh / 2)];
+    if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 4) continue;
+    ctx.strokeStyle = C.sel; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(...a); ctx.lineTo(...b); ctx.stroke();
+    const ang = Math.atan2(b[1] - a[1], b[0] - a[0]); ctx.beginPath(); ctx.moveTo(...b);
+    ctx.lineTo(b[0] - 9 * Math.cos(ang - 0.4), b[1] - 9 * Math.sin(ang - 0.4)); ctx.lineTo(b[0] - 9 * Math.cos(ang + 0.4), b[1] - 9 * Math.sin(ang + 0.4));
+    ctx.closePath(); ctx.fillStyle = C.sel; ctx.fill();
+  }
+
+  // pins: each bus a run of ticks, labelled below; a moved bus in the accent colour
+  const startOrder = g.groups.map(x => x[0]);
+  const now = pinXY(s.order), was = pinXY(startOrder);
+  ctx.font = `11px ${css("--font-mono")}`; ctx.textBaseline = "top"; ctx.textAlign = "center";
+  s.order.forEach((b, j) => {
+    const [a, c] = now[b], movedBus = Math.abs(was[b][0] - a) > 0.5;
+    ctx.fillStyle = movedBus ? C.sel : C.pin;
+    for (let x = a; x <= c + 0.01; x += g.pin_pitch) ctx.fillRect(X(x) - 0.75, Y(g.pin_y) - 6, 1.5, 12);
+    const row = j % 3, ly = Y(g.pin_y) + 12 + row * 14;
+    ctx.strokeStyle = movedBus ? C.sel : C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(X((a + c) / 2), Y(g.pin_y) + 7); ctx.lineTo(X((a + c) / 2), ly); ctx.stroke();
+    ctx.fillStyle = movedBus ? C.sel : C.muted; ctx.font = `${movedBus ? 600 : 400} 11px ${css("--font-mono")}`;
+    ctx.fillText(b, X((a + c) / 2), ly + 1);
+  });
+
+  // the worst path, as a Manhattan route from the pin up, then across to the bank pin
+  const wp = s.worst_path, f = wp.from, t = wp.to;
+  ctx.strokeStyle = C.path; ctx.lineWidth = 2; ctx.setLineDash([7, 4]); ctx.beginPath();
+  ctx.moveTo(X(f[0]), Y(f[1])); ctx.lineTo(X(f[0]), Y(t[1])); ctx.lineTo(X(t[0]), Y(t[1])); ctx.stroke(); ctx.setLineDash([]);
+  for (const p of [f, t]) { ctx.beginPath(); ctx.arc(X(p[0]), Y(p[1]), 4, 0, Math.PI * 2); ctx.fillStyle = C.path; ctx.fill(); }
+  const lx = (X(f[0]) + X(t[0])) / 2, ly = Y(t[1]) - 8, label = `worst path ${fmt(wp.length)} µm`;
+  ctx.font = `600 12px ${css("--font-body")}`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+  ctx.lineWidth = 4; ctx.strokeStyle = C.bg; ctx.strokeText(label, lx, ly); ctx.fillStyle = C.path; ctx.fillText(label, lx, ly);
+}
+const tip = $("tip");
+function showTip(e, html) { tip.innerHTML = html; tip.hidden = false; const r = tip.getBoundingClientRect();
+  let x = e.clientX + 14, y = e.clientY + 14; if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14; if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+  tip.style.left = x + "px"; tip.style.top = y + "px"; }
+cv.addEventListener("pointermove", e => {
+  const r = cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+  const h = hits.find(h => x >= h.x0 && x <= h.x1 && y >= h.y0 && y <= h.y1);
+  if (!h) return tip.hidden = true;
+  const s = step(), g = R.geometry, i = h.i, st = g.start_pos[i], moved = Math.hypot(s.pos[i][0] - st[0], s.pos[i][1] - st[1]) > 0.5 || s.orient[i] !== "N";
+  showTip(e, `<b>${esc(g.banks[i])}</b> at (${fmt(s.pos[i][0])}, ${fmt(s.pos[i][1])}) µm, ${s.orient[i]}<br>
+    its worst path ${fmt(s.bank_worst[i])} µm, its pins' total ${mm(s.bank_total[i])} mm${moved ? `<br>moved from (${fmt(st[0])}, ${fmt(st[1])}) N` : ""}`);
+});
+cv.addEventListener("pointerleave", () => tip.hidden = true);
+
+// ---- curves: one line per port budget, for the chosen objective ----
+const SERIES = ["--s0", "--s1", "--s2"];
+function chart(id, metric) {
+  const box = $(id), w = Math.max(320, Math.min(640, box.clientWidth || 560)), h = 250, L = 58, Rm = 92, T = 14, B = 34;
+  const runs = R.runs.filter(r => r.objective === state.objective).sort((a, b) => a.port_budget - b.port_budget);
+  const val = v => metric === "worst" ? v : v / 1000, unit = metric === "worst" ? "µm" : "mm";
+  const ref = metric === "total" ? val(R.base.now.total) : null;
+  const vals = runs.flatMap(r => r.steps.map(s => val(s[metric]))).concat(ref ? [ref] : []);
+  let lo = Math.min(...vals), hi = Math.max(...vals); const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const kmax = Math.max(...runs.map(r => r.steps.length - 1));
+  const x = k => L + (k / kmax) * (w - L - Rm), y = v => T + (1 - (v - lo) / (hi - lo)) * (h - T - B);
+  const stepv = (() => { const r = (hi - lo) / 4, p = 10 ** Math.floor(Math.log10(r)); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= r); })();
+  let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="${metric} against bank moves">`;
+  for (let v = Math.ceil(lo / stepv) * stepv; v <= hi; v += stepv)
+    s += `<line class="grid" x1="${L}" x2="${w - Rm}" y1="${y(v)}" y2="${y(v)}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`;
+  for (let k = 0; k <= kmax; k++) s += `<text x="${x(k)}" y="${h - 14}" text-anchor="middle">${k}</text>`;
+  s += `<text x="${(L + w - Rm) / 2}" y="${h - 1}" text-anchor="middle">bank moves</text>`;
+  s += `<text x="12" y="${T + (h - T - B) / 2}" transform="rotate(-90 12 ${T + (h - T - B) / 2})" text-anchor="middle">${unit}</text>`;
+  if (ref) s += `<line x1="${L}" x2="${w - Rm}" y1="${y(ref)}" y2="${y(ref)}" stroke="var(--faint)" stroke-dasharray="5 4"/>
+    <text x="${w - Rm + 6}" y="${y(ref) + 4}">today's gates</text>`;
+  const ends = runs.map(r => ({ r, y: y(val(r.steps[r.steps.length - 1][metric])) })).sort((a, b) => a.y - b.y);
+  for (let j = 1; j < ends.length; j++) ends[j].y = Math.max(ends[j].y, ends[j - 1].y + 13);
+  const labelY = new Map(ends.map(e => [e.r, e.y]));
+  for (const r of runs) {
+    const col = `var(${SERIES[r.port_budget] || "--s0"})`, pts = r.steps.map((st, k) => [x(k), y(val(st[metric]))]);
+    s += `<polyline fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" points="${pts.map(p => p.join(",")).join(" ")}"/>`;
+    const last = pts[pts.length - 1];
+    s += `<text x="${last[0] + 12}" y="${labelY.get(r) + 4}" style="fill:var(--ink)">${r.port_budget} port move${r.port_budget === 1 ? "" : "s"}</text>`;
+    r.steps.forEach((st, k) => {
+      const on = r.port_budget === state.ports && k === Math.min(state.k, r.steps.length - 1);
+      s += `<circle cx="${pts[k][0]}" cy="${pts[k][1]}" r="${on ? 7 : 4.5}" fill="${col}" stroke="var(--panel)" stroke-width="2" style="cursor:pointer"
+        data-p="${r.port_budget}" data-k="${k}" data-tip="${r.port_budget} port and ${k} bank moves: <b>${fmt(val(st[metric]))} ${unit}</b>"/>`;
+      if (on) s += `<circle cx="${pts[k][0]}" cy="${pts[k][1]}" r="10" fill="none" stroke="var(--ink)" stroke-width="1.5"/>`;
+    });
+  }
+  box.innerHTML = s + "</svg>";
+}
+for (const id of ["cWorst", "cTotal"]) {
+  $(id).addEventListener("mousemove", e => { const c = e.target.closest("[data-tip]"); c ? showTip(e, c.dataset.tip) : tip.hidden = true; });
+  $(id).addEventListener("mouseleave", () => tip.hidden = true);
+  $(id).addEventListener("click", e => { const c = e.target.closest("[data-k]"); if (c) { state.ports = +c.dataset.p; state.k = +c.dataset.k; render(); } });
+}
+
+function limits() {
+  const s = R.settings;
+  $("limits").innerHTML = [
+    `<b>Gate area.</b> A move may put a bank where gates sit now. The search does not keep room for them.`,
+    `<b>Bounds, not placements.</b> Each path is the straight line between its two ends. A placer adds detours: today's gates add ${pct(R.base.now.total, R.base.line.total).replace("+", "")} to the start's total.`,
+    `<b>The total leans on write enable.</b> Of the ${R.geometry.bank_pins} bank pins on cone paths, 32 per bank are w_mask_in on the we net, so the we pin weighs heavily.`,
+    `<b>A greedy search.</b> Port moves first, then one bank move at a time. A better sequence may exist.`,
+    `<b>Our choices.</b> Banks keep ${s.GAP} µm apart, ${s.MARGIN} µm from the die edge and ${s.PIN_KEEPOUT} µm above the pin row, on a ${s.STEP} µm grid.`,
+    `<b>Out of scope.</b> Paths outside def2graph's cones: the write data from the wreg flops, and rdata_r.`,
+  ].map(x => `<li>${x}</li>`).join("");
+}
+new ResizeObserver(() => { if (R) render(); }).observe(document.querySelector(".main"));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => R && render());
+new MutationObserver(() => R && render()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+</script>

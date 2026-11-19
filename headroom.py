@@ -149,6 +149,28 @@ class Design:
             out.append((v.max(), v.sum()))
         return np.array(out)
 
+    def detail(self, st):
+        """Each bank's worst path, and the overall worst path's bank, pin, port and ends."""
+        E = self.extremes(st["order"])
+        pxy = self.port_xy(st["order"])
+        bs = self.bank_scores(st, E)
+        b = int(bs[:, 0].argmax())
+        P = st["pos"][b] + flip(self.off, self.w, self.h, st["orient"][b])
+        v = self.pin_worst(P, E)
+        j = int(v.argmax())
+        port = max(self.reach[j], key=lambda n: abs(pxy[n][0] - P[j][0]) + abs(pxy[n][1] - P[j][1]))
+        return {"bank_worst": bs[:, 0].round(1).tolist(), "bank_total": bs[:, 1].round(1).tolist(),
+                "worst_path": {"bank": self.name(self.banks[b]), "pin": self.pins[j], "port": port,
+                               "length": round(float(v[j]), 1), "from": [round(c, 2) for c in pxy[port]],
+                               "to": P[j].round(2).tolist()}}
+
+    def geometry(self):
+        side = {o: ("left" if flip(self.off, self.w, self.h, o)[:, 0].mean() < self.w / 2 else "right") for o in ORIENTS}
+        return {"design": self.g["design"], "die": self.die, "bank_size": [self.w, self.h],
+                "banks": [self.name(b) for b in self.banks], "start_pos": self.bpos.round(2).tolist(),
+                "groups": [[b, len(m)] for b, m in self.groups], "pin_x0": self.x0, "pin_pitch": self.pitch,
+                "pin_y": self.py, "pin_side": side, "bank_pins": len(self.pins)}
+
     def scores(self, st, E=None):
         bs = self.bank_scores(st, self.extremes(st["order"]) if E is None else E)
         return float(bs[:, 0].max()), float(bs[:, 1].sum())
@@ -313,7 +335,7 @@ def search(D, objective, port_budget, k):
     def record():
         w, t = D.scores(st)
         steps.append({"moves": list(st["moves"]), "worst": w, "total": t, "pos": st["pos"].round(2).tolist(),
-                      "orient": list(st["orient"]), "order": list(st["order"])})
+                      "orient": list(st["orient"]), "order": list(st["order"]), **D.detail(st)})
 
     for _ in range(port_budget):
         mv = D.best_port_move(st, objective)
@@ -362,8 +384,9 @@ def main(argv=None):
                 nb = sum(m.startswith("bank") for m in s["moves"])
                 print(f"lower {objective:5s} | ports <= {p}, bank moves {nb}: worst {s['worst']:6.0f} um, "
                       f"total {s['total'] / 1000:7.1f} mm | {s['moves'][-1] if s['moves'] else 'no move'}")
-    json.dump({"settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP},
-               "pins": D.pins, "base": base, "runs": runs}, open(args.out, "w"), indent=1)
+    json.dump({"format": "placehead-headroom/1", "geometry": D.geometry(),
+               "settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP},
+               "pins": D.pins, "base": base, "runs": runs}, open(args.out, "w"), separators=(",", ":"))
     print("wrote", args.out)
 
 

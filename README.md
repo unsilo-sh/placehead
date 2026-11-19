@@ -90,3 +90,16 @@ python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
 straight-line score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
 the top of the file.
+
+`headroom_viewer.html` shows the results: it loads `headroom.json` beside it, or a results file you
+open. Pick which score the search lowers first and the port budget, then step through the bank moves.
+It is published at https://claude.ai/artifact/Rszs9A9q233XLUYjJaiXhk (republish from this file, with
+`out/headroom.json` as `headroom.json`, to keep that URL). The cone viewer, `viewer.html`, is at
+https://claude.ai/artifact/YBtLdiyu2oh7Rz553Xg7V1 (with a graph JSON as `graph.json`).
+
+### Next steps, not done yet
+
+1. **Gate area.** Reserve the channel for logic, or charge each move for the area the gates need,
+   so a move does not take the space the OR trees and decoders sit in now.
+2. **A real placer.** Place two or three of the results with OpenROAD (not installed here; run it in
+   Docker) and measure the paths, to replace the straight-line bounds with real lengths.
