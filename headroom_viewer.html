@@ -109,9 +109,9 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
   <div id="app" hidden>
     <section class="card pareto" aria-label="Variants tried">
       <div class="pareto-head"><h2>Variants tried</h2>
-        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to lock its path from today below; click empty space to clear it. Drag a box to zoom in; double-click to zoom out.</p>
+        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to lock its path from today below; click empty space to clear it. Drag a box to zoom in; double-click to zoom out. Rank spaces each distinct cost evenly, so close values separate; distance along a rank axis means nothing.</p>
         <button class="btn" id="zoomReset" type="button" hidden>Reset zoom</button>
-        <button class="btn" id="logBtn" type="button" aria-pressed="false">Log scale: off</button>
+        <div class="seg" id="scaleSeg" title="How the distance axes are drawn"><button type="button" data-v="dist">Distance</button><button type="button" data-v="pct">% of today</button><button type="button" data-v="rank">Rank</button></div>
         <div class="seg" id="metricSeg"><button type="button" data-v="worst">Moves × worst path</button><button type="button" data-v="total">Moves × total</button><button type="button" data-v="both">Worst path × total</button></div></div>
       <canvas id="pm"></canvas>
       <div class="plegend" id="plegend"></div>
@@ -149,7 +149,7 @@ const signed = (v, f = fmt) => Math.abs(v) < 0.5 ? "0" : `${v < 0 ? "−" : "+"}
 const pct = (v, b) => `${v <= b ? "−" : "+"}${Math.abs(100 * (v - b) / b).toFixed(0)}%`;
 let R = null, opened = false;
 // target: the variant selected in the Variants view; it locks the path. focus: the variant shown on the floorplan.
-const state = { metric: "worst", target: null, focus: 0, zoom: {}, log: false };   // zoom: per view, {x0, x1, y0, y1} in the view's units
+const state = { metric: "worst", target: null, focus: 0, zoom: {}, scale: "dist" };   // zoom: per view, {x0, x1, y0, y1} in the view's units
 
 // ---- loading ----
 function check(d) {
@@ -243,42 +243,67 @@ function drawPM() {
   const vs = R.variants, both = state.metric === "both";
   const fx = v => both ? v.worst : v.depth, fy = v => both ? v.total : v[state.metric], val = fy;
   const dmax = Math.max(...vs.map(v => v.depth));
-  let x0 = both ? Math.min(...vs.map(fx)) : 0, x1 = both ? Math.max(...vs.map(fx)) : Math.max(1, dmax);
-  if (both) { const px = (x1 - x0) * 0.04; x0 -= px; x1 += px; }
-  let y0 = Math.min(...vs.map(fy)), y1 = Math.max(...vs.map(fy)); const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad;
+  const yMetric = both ? "total" : state.metric, base = fy(vs[0]);
+  const unitFmt = m => m === "worst" ? fmt : mm;
+  // a distance axis: as distance, as % of today, or by rank (each distinct value one even step)
+  const scaleOf = (vals, b, metric) => {
+    const nice = r => { const p = 10 ** Math.floor(Math.log10(r)); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= r); };
+    if (state.scale === "rank") {
+      const u = [...new Set(vals.map(v => Math.round(v * 2) / 2))].sort((a, c) => a - c);
+      const gap = i => (u[Math.min(i + 1, u.length - 1)] - u[Math.max(0, Math.min(i, u.length - 2))]) || 1;
+      const t = v => { let lo = 0, hi = u.length - 1;
+        if (v <= u[0]) return (v - u[0]) / gap(0);
+        if (v >= u[hi]) return hi + (v - u[hi]) / gap(hi - 1);
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; u[m] <= v ? lo = m : hi = m; }
+        return lo + (v - u[lo]) / (u[hi] - u[lo]); };
+      const inv = q => { if (q <= 0) return u[0] + q * gap(0); if (q >= u.length - 1) return u[u.length - 1] + (q - u.length + 1) * gap(u.length - 2);
+        const i = Math.floor(q); return u[i] + (q - i) * (u[i + 1] - u[i]); };
+      const ticks = (q0, q1) => { const k = Math.max(1, Math.ceil((q1 - q0) / 7)), out = [];
+        for (let i = Math.max(0, Math.ceil(q0)); i <= Math.min(u.length - 1, q1); i += k) out.push([u[i], unitFmt(metric)(u[i])]); return out; };
+      return { t, u: inv, ticks, gains: false, label: m => `${m === "worst" ? "worst path" : "total"}, by rank (labels in ${m === "worst" ? "µm" : "mm"})` };
+    }
+    if (state.scale === "pct") {
+      const t = v => 100 * (v / b - 1), inv = q => b * (1 + q / 100);
+      const ticks = (q0, q1) => { const st = nice((q1 - q0) / 6), out = [];
+        for (let q = Math.ceil(q0 / st) * st; q <= q1 + 1e-9; q += st) out.push([inv(q), `${q > 0.05 ? "+" : q < -0.05 ? "−" : ""}${Math.abs(q).toFixed(st < 1 ? 1 : 0)}%`]); return out; };
+      return { t, u: inv, ticks, gains: false, label: m => `${m === "worst" ? "worst path" : "total"}, % of today` };
+    }
+    const ticks = (q0, q1) => { const st = nice((q1 - q0) / 6), out = [];
+      for (let q = Math.ceil(q0 / st) * st; q <= q1; q += st) out.push([q, unitFmt(metric)(q)]); return out; };
+    return { t: v => v, u: v => v, ticks, gains: true, label: m => m === "worst" ? "worst path, µm" : "total, mm" };
+  };
+  const moves = { t: v => v, u: v => v, gains: false, label: () => "moves from today",
+    ticks: (q0, q1) => { const sp = q1 - q0, st = sp > 20 ? 5 : sp > 10 ? 2 : 1, out = [];
+      for (let d = Math.max(0, Math.ceil(q0 / st) * st); d <= q1; d += st) out.push([d, String(d)]); return out; } };
+  const SX = both ? scaleOf(vs.map(fx), vs[0].worst, "worst") : moves, SY = scaleOf(vs.map(fy), base, yMetric);
+  // ranges in each axis's own units, padded; a zoom, kept in costs, wins
+  let X0 = Math.min(...vs.map(v => SX.t(fx(v)))), X1 = Math.max(...vs.map(v => SX.t(fx(v))));
+  if (both) { const px = (X1 - X0) * 0.04; X0 -= px; X1 += px; } else { X0 = 0; X1 = Math.max(1, dmax); }
+  let Y0 = Math.min(...vs.map(v => SY.t(fy(v)))), Y1 = Math.max(...vs.map(v => SY.t(fy(v)))); const pad = (Y1 - Y0) * 0.06; Y0 -= pad; Y1 += pad;
   const z = state.zoom[state.metric];
-  if (z) ({ x0, x1, y0, y1 } = z);
+  if (z) { X0 = SX.t(z.x0); X1 = SX.t(z.x1); Y0 = SY.t(z.y0); Y1 = SY.t(z.y1); }
   $("zoomReset").hidden = !z;
+  for (const b of $("scaleSeg").children) b.setAttribute("aria-pressed", String(b.dataset.v === state.scale));
   const L = 74, Rm = both ? 280 : 210, T = both ? 26 : 16, B = 40, w = W2 - L - Rm, h = H2 - T - B;
-  // distance axes may be logarithmic; the moves axis stays linear
-  const id_ = v => v, tx = both && state.log ? Math.log : id_, ty = state.log ? Math.log : id_;
-  const ux = both && state.log ? Math.exp : id_, uy = state.log ? Math.exp : id_;
-  const X = v => L + (tx(v) - tx(x0)) / (tx(x1) - tx(x0)) * w, Y = v => T + (1 - (ty(v) - ty(y0)) / (ty(y1) - ty(y0))) * h;
+  const X = v => L + (SX.t(v) - X0) / (X1 - X0) * w, Y = v => T + (1 - (SY.t(v) - Y0) / (Y1 - Y0)) * h;
   const PX = v => X(fx(v)), PY = v => Y(fy(v));
   const inside = v => PX(v) >= L - 0.5 && PX(v) <= L + w + 0.5 && PY(v) >= T - 0.5 && PY(v) <= T + h + 0.5;
-  PV = { PX, PY, L, T, w, h, inside, ix: px => ux(tx(x0) + (px - L) / w * (tx(x1) - tx(x0))), iy: py => uy(ty(y0) + (1 - (py - T) / h) * (ty(y1) - ty(y0))) };
-  const base = fy(vs[0]), yMetric = both ? "total" : state.metric;
-  // grid and axes: absolute on the left, against today on the right
+  PV = { PX, PY, L, T, w, h, inside, ix: px => SX.u(X0 + (px - L) / w * (X1 - X0)), iy: py => SY.u(Y0 + (1 - (py - T) / h) * (Y1 - Y0)) };
+  // grid and axes; gains against today along the top and right, unless the axes already show them
   pctx.font = `11px ${css("--font-body")}`; pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.fillStyle = C.muted;
-  const r6 = (y1 - y0) / 5, p10 = 10 ** Math.floor(Math.log10(r6)), sy_ = [1, 2, 2.5, 5, 10].map(m => m * p10).find(m => m >= r6);
   pctx.textAlign = "right"; pctx.textBaseline = "middle";
-  for (let v = Math.ceil(y0 / sy_) * sy_; v <= y1; v += sy_) { pctx.beginPath(); pctx.moveTo(L, Y(v)); pctx.lineTo(L + w, Y(v)); pctx.stroke(); pctx.fillText(yMetric === "worst" ? fmt(v) : mm(v), L - 8, Y(v)); }
+  for (const [v, lab] of SY.ticks(Y0, Y1)) { pctx.beginPath(); pctx.moveTo(L, Y(v)); pctx.lineTo(L + w, Y(v)); pctx.stroke(); pctx.fillText(lab, L - 8, Y(v)); }
   pctx.textAlign = "center"; pctx.textBaseline = "top";
-  if (both) {
-    const r = (x1 - x0) / 6, p = 10 ** Math.floor(Math.log10(r)), sx_ = [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= r);
-    for (let v = Math.ceil(x0 / sx_) * sx_; v <= x1; v += sx_) { pctx.beginPath(); pctx.moveTo(X(v), T); pctx.lineTo(X(v), T + h); pctx.stroke(); pctx.fillText(fmt(v), X(v), T + h + 6); }
-    pctx.fillStyle = css("--faint"); pctx.textBaseline = "bottom";
-    for (const g of [10, 20, 30, 40]) { const v = vs[0].worst * (1 - g / 100); if (v >= x0 && v <= x1) pctx.fillText(`−${g}%`, X(v), T - 4); }
-    pctx.fillStyle = C.muted;
-  } else {
-    const span = x1 - x0, sx_ = span > 20 ? 5 : span > 10 ? 2 : 1;
-    for (let d = Math.max(0, Math.ceil(x0 / sx_) * sx_); d <= x1; d += sx_) pctx.fillText(d, X(d), T + h + 6);
-  }
-  pctx.textBaseline = "bottom"; pctx.fillText(both ? "worst path, µm" : "moves from today", L + w / 2, H2 - 4);
+  for (const [v, lab] of SX.ticks(X0, X1)) { if (both) { pctx.beginPath(); pctx.moveTo(X(v), T); pctx.lineTo(X(v), T + h); pctx.stroke(); } pctx.fillText(lab, X(v), T + h + 6); }
+  pctx.textBaseline = "bottom"; pctx.fillText(SX.label("worst"), L + w / 2, H2 - 4);
   pctx.save(); pctx.translate(16, T + h / 2); pctx.rotate(-Math.PI / 2); pctx.textBaseline = "middle";
-  pctx.fillText(yMetric === "worst" ? "worst path, µm" : "total, mm", 0, 0); pctx.restore();
-  pctx.textAlign = "left"; pctx.textBaseline = "middle"; pctx.fillStyle = C.faint;
-  for (const g of [10, 20, 30, 40]) { const v = base * (1 - g / 100); if (v >= y0 && v <= y1) pctx.fillText(`−${g}%`, L + w + 6, Y(v)); }
+  pctx.fillText(SY.label(yMetric), 0, 0); pctx.restore();
+  pctx.fillStyle = C.faint;
+  const yIn = v => Y(v) >= T && Y(v) <= T + h, xIn = v => X(v) >= L && X(v) <= L + w;
+  if (both && SX.gains) { pctx.textAlign = "center"; pctx.textBaseline = "bottom";
+    for (const g of [10, 20, 30, 40]) { const v = vs[0].worst * (1 - g / 100); if (xIn(v)) pctx.fillText(`−${g}%`, X(v), T - 4); } }
+  if (SY.gains) { pctx.textAlign = "left"; pctx.textBaseline = "middle";
+    for (const g of [10, 20, 30, 40]) { const v = base * (1 - g / 100); if (yIn(v)) pctx.fillText(`−${g}%`, L + w + 6, Y(v)); } }
   pctx.save(); pctx.beginPath(); pctx.rect(L, T, w, h); pctx.clip();
   // every variant joined to its parent
   pctx.strokeStyle = C.line; pctx.lineWidth = 1.2;
@@ -362,8 +387,7 @@ pm.addEventListener("pointerup", e => {
 });
 pm.addEventListener("dblclick", () => { delete state.zoom[state.metric]; drawPM(); });
 $("zoomReset").onclick = () => { delete state.zoom[state.metric]; drawPM(); };
-$("logBtn").onclick = () => { state.log = !state.log;
-  $("logBtn").setAttribute("aria-pressed", String(state.log)); $("logBtn").textContent = `Log scale: ${state.log ? "on" : "off"}`; drawPM(); };
+$("scaleSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.scale = b.dataset.v; drawPM(); } });
 
 // ---- floorplan ----
 const cv = $("fp"), ctx = cv.getContext("2d");
