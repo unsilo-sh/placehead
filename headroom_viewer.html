@@ -107,7 +107,7 @@ svg .axis { stroke: var(--faint); }
 <div class="wrap">
   <header>
     <h1>Placement headroom on <code id="dname">…</code></h1>
-    <p class="sub">How much shorter the port-to-memory paths get with a few moves. A bank move puts one memory bank somewhere legal or turns it. A port move moves one bus's pins along the bottom edge, and the other buses close up around it. Scores are straight-line wire lengths between a path's two ends: the shortest a placer could make them.</p>
+    <p class="sub">How much shorter the port-to-memory paths get with a few moves. A bank move puts one memory bank somewhere legal or turns it. A port move moves one bus's pins along the bottom edge, and the other buses close up around it. Scores are the Manhattan distance (horizontal plus vertical) between a path's two ends: the shortest a placer could make its wire.</p>
     <div class="loadbar">
       <span class="label">Results</span>
       <span id="src" class="mono">loading headroom.json…</span>
@@ -421,7 +421,7 @@ function limits() {
   const s = R.settings;
   $("limits").innerHTML = [
     `<b>Gate area.</b> A move may put a bank where gates sit now. The search does not keep room for them.`,
-    `<b>Bounds, not placements.</b> Each path is the straight line between its two ends. A placer adds detours: today's gates add ${pct(R.base.now.total, R.base.line.total).replace("+", "")} to the start's total.`,
+    `<b>Bounds, not placements.</b> Each path is the Manhattan distance between its two ends. A placer adds detours: today's gates add ${pct(R.base.now.total, R.base.line.total).replace("+", "")} to the start's total.`,
     `<b>The total leans on write enable.</b> Of the ${R.geometry.bank_pins} bank pins on cone paths, 32 per bank are w_mask_in on the we net, so the we pin weighs heavily.`,
     `<b>A greedy search.</b> Port moves first, then one bank move at a time. A better sequence may exist.`,
     `<b>Our choices.</b> Banks keep ${s.GAP} µm apart, ${s.MARGIN} µm from the die edge and ${s.PIN_KEEPOUT} µm above the pin row, on a ${s.STEP} µm grid.`

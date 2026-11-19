@@ -10,9 +10,9 @@ Scores, in um of wire:
   worst  the longest path
   total  the sum, over bank pins, of each pin's longest path
 
-A placement is scored by the straight line (Manhattan) between each path's two ends, which is
+A placement is scored by the Manhattan distance between each path's two ends, which is
 the shortest a placer could make it. With no limit on gate area, re-placed gates can always sit
-on those lines, so a linear program over gate positions gives the same numbers (--check-lp).
+on such routes, so a linear program over gate positions gives the same numbers (--check-lp).
 "now" is the current placement with its gates where they are.
 
 Moves:

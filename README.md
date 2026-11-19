@@ -79,7 +79,7 @@ files beside it, so open a local copy of `viewer.html` and load the JSON with th
 
 `headroom.py` estimates how much shorter the port-to-memory paths get with a few moves:
 relocating or flipping a bank, or moving one bus's pins along the bottom edge. It scores a
-placement by the straight line between each path's two ends, the shortest a placer could make
+placement by the Manhattan distance between each path's two ends, the shortest a placer could make
 it, as the worst path and as the total over bank pins. For each port budget it makes the best
 port moves, then up to K bank moves, greedily.
 
@@ -94,7 +94,7 @@ move above the array or down toward the pins. Bank moves are then mirrors in pla
 `--k 48 --keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200 --keepout 0,0,2450,80`.
 
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
-straight-line score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
+Manhattan score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
 the top of the file.
 
 `headroom_viewer.html` shows the results: it loads `headroom.json` beside it, or a results file you
