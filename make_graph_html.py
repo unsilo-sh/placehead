@@ -144,6 +144,36 @@ def main(argv=None):
             fanout[d].append(k)
             fanin[s] = k
 
+    # ---- bus wires: the bit of a bus each net carries ----
+    # A net carries bit n when its name ends in [n], or when the plain gate driving it
+    # gets bit n and no other bit on its inputs (an inverter, a masking AND, an OR tree).
+    # A gate that mixes bits (a decoder) drives a net that carries no bit.
+    def bit_of(name):
+        m = re.search(r"\[(\d+)\]$", name)
+        return int(m.group(1)) if m else None
+
+    drv_of = {}
+    for net, conns in nets.items():
+        for c in conns:
+            if (c[0] == "PIN" or (c[0] in placed and c[1] in lef[placed[c[0]][0]][1])) and drives(*c):
+                drv_of[net] = c
+    pin_net = {c: net for net, conns in nets.items() for c in conns}
+    net_bit = {}
+
+    def carries(net):
+        if net in net_bit:
+            return net_bit[net]
+        net_bit[net] = None
+        b = bit_of(net)
+        d = drv_of.get(net)
+        if b is None and d is not None and d[0] != "PIN" and kind.get(d[0]) == "comb":
+            ins = {carries(pin_net[(d[0], p)]) for p, (dr, _) in lef[placed[d[0]][0]][1].items()
+                   if dr != "OUTPUT" and (d[0], p) in pin_net}
+            ins.discard(None)
+            b = ins.pop() if len(ins) == 1 else None
+        net_bit[net] = b
+        return b
+
     def cell_pins(i, out):
         return [(i, p) for p, (dr, _) in lef[placed[i][0]][1].items()
                 if (dr == "OUTPUT") == out and (i, p) in (fanout if out else fanin)]
@@ -256,6 +286,9 @@ def main(argv=None):
         "ports": [[r.name, r.direction[0], um(r.x), um(r.y)] for r in ports.itertuples()],
         "segs": segs,
         "segInCone": [int(k in in_any_cone) for k in range(len(segs))],
+        # A bus wire carries one bit of a bus, or lands on a pin that is one bit of a bus.
+        "segBus": [int(carries(net) is not None or bit_of(d[1]) is not None or bit_of(s[1]) is not None)
+                   for net, d, s, L in seg_net],
         # Per wire: driver node, driver pin, sink node, sink pin, net, length (um).
         "segInfo": [[idx[node_of(*d)], d[1], idx[node_of(*s)], s[1], net, round(L, 2)]
                     for net, d, s, L in seg_net],

@@ -247,13 +247,12 @@ function zoomPins() {
   fitBox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), 0.12);
 }
 
-// Wire classes a button hides, by net name. Hiding changes only what is drawn and clickable.
-// Chip enable: the ce pin's net and each bank's ce_<n>; the bank-select decoder is shared with write enable, so it stays.
+// Wire classes a button hides. Hiding changes only what is drawn and clickable.
+// A non-bus wire carries no single bit of a bus (segBus, from make_graph_html.py): clock, enables, decoded selects.
 const TOGGLES = [
-  { label: "Clock wires", re: /^(clk|clock)\b/i, on: true },
-  { label: "Chip enable wires", re: /^ce(_\d+)?$/i, on: true },
+  { label: "Non-bus wires", test: k => !D.segBus[k], on: true },
 ];
-const hidden = k => TOGGLES.some(t => !t.on && t.re.test(D.segInfo[k][4]));
+const hidden = k => TOGGLES.some(t => !t.on && t.test(k));
 const vis = ks => TOGGLES.every(t => t.on) ? ks : ks.filter(k => !hidden(k));
 function selection() {
   const S = selection0();
