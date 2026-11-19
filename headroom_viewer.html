@@ -109,7 +109,7 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
   <div id="app" hidden>
     <section class="card pareto" aria-label="Variants tried">
       <div class="pareto-head"><h2>Variants tried</h2>
-        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to trace its path back to today; the floorplan and the move list follow it.</p>
+        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to lock its path from today below; click empty space to clear it.</p>
         <div class="seg" id="metricSeg"><button type="button" data-v="worst">Moves × worst path</button><button type="button" data-v="total">Moves × total</button><button type="button" data-v="both">Worst path × total</button></div></div>
       <canvas id="pm"></canvas>
       <div class="plegend" id="plegend"></div>
@@ -128,7 +128,7 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
       </section>
       <div class="side">
         <div class="tiles" id="tiles"></div>
-        <section class="card moves" aria-label="Moves"><h2>Path from today</h2><div class="mlist" id="mlist"></div></section>
+        <section class="card moves" aria-label="Moves"><h2 id="pathHead">Path from today</h2><p class="note" style="padding:0 14px">Click a move to show that variant on the floorplan.</p><div class="mlist" id="mlist"></div></section>
       </div>
     </div>
 
@@ -146,7 +146,8 @@ const mm = v => (v / 1000).toLocaleString(undefined, { maximumFractionDigits: 0 
 const signed = (v, f = fmt) => Math.abs(v) < 0.5 ? "0" : `${v < 0 ? "−" : "+"}${f(Math.abs(v))}`;
 const pct = (v, b) => `${v <= b ? "−" : "+"}${Math.abs(100 * (v - b) / b).toFixed(0)}%`;
 let R = null, opened = false;
-const state = { metric: "worst", sel: 0 };
+// target: the variant selected in the Variants view; it locks the path. focus: the variant shown on the floorplan.
+const state = { metric: "worst", target: null, focus: 0 };
 
 // ---- loading ----
 function check(d) {
@@ -159,7 +160,7 @@ function load(d, source) {
   if (err) { $("loadmsg").textContent = `Not loaded: ${err}`; $("loadmsg").className = "note err"; return; }
   R = d; $("src").textContent = source; $("loadmsg").textContent = ""; $("app").hidden = false;
   $("dname").textContent = d.geometry.design; document.title = `${d.geometry.design} Placement Headroom`;
-  state.sel = d.variants.reduce((a, v) => (v.worst < a.worst || (v.worst === a.worst && v.total < a.total)) ? v : a).id;
+  state.target = state.focus = d.variants.reduce((a, v) => (v.worst < a.worst || (v.worst === a.worst && v.total < a.total)) ? v : a).id;
   render();
 }
 function readFile(f) {
@@ -179,11 +180,11 @@ fetch("headroom.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`
     $("loadmsg").textContent = `No headroom.json beside the page (${e.message}). Open a results file, or drop one here.`; });
 
 // ---- selection: one variant, and its path back to today ----
-const step = () => R.variants[state.sel];
+const step = () => R.variants[state.focus];
 const pathTo = id => { const out = []; for (let v = R.variants[id]; v; v = v.parent === null ? null : R.variants[v.parent]) out.push(v); return out.reverse(); };
 const kindOf = v => v.parent === null ? "today" : v.move.split(":")[0];
 $("metricSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.metric = b.dataset.v; render(); } });
-$("mlist").addEventListener("click", e => { const b = e.target.closest("[data-id]"); if (b) { state.sel = +b.dataset.id; render(); } });
+$("mlist").addEventListener("click", e => { const b = e.target.closest("[data-id]"); if (b) { state.focus = +b.dataset.id; render(); } });
 
 function render() {
   for (const b of $("metricSeg").children) b.setAttribute("aria-pressed", String(b.dataset.v === state.metric));
@@ -206,12 +207,18 @@ function tiles() {
 }
 
 function moves() {
-  const path = pathTo(state.sel);
+  if (state.target === null) {
+    $("pathHead").textContent = "Path from today";
+    $("mlist").innerHTML = `<p class="note" style="padding:4px 14px 10px">Select a variant in the Variants view to lock its path here.</p>`;
+    return;
+  }
+  const path = pathTo(state.target);
+  $("pathHead").textContent = `Path from today to variant ${state.target}`;
   $("mlist").innerHTML = path.map((v, i) => {
     const k = kindOf(v), [, ...rest] = v.move.split(": "), prev = path[i - 1];
     const gain = prev ? `<span class="gain">worst ${signed(v.worst - prev.worst)} µm, total ${signed(v.total - prev.total, mm)} mm</span>`
                       : `<span class="gain">worst ${fmt(v.worst)} µm, total ${mm(v.total)} mm</span>`;
-    return `<button class="move ${v.id === state.sel ? "current" : ""}" type="button" data-id="${v.id}">
+    return `<button class="move ${v.id === state.focus ? "current" : ""}" type="button" data-id="${v.id}" title="Show this variant on the floorplan">
       <span class="tag ${k === "port" ? "port" : ""}">${k === "today" ? "Today" : k}</span><span class="what">${k === "today" ? "the placement as it is" : esc(rest.join(": "))}</span>${gain}</button>`;
   }).join("");
 }
@@ -267,16 +274,17 @@ function drawPM() {
   pctx.strokeStyle = C.line; pctx.lineWidth = 1.2;
   for (const v of vs) if (v.parent !== null) { const p = vs[v.parent]; pctx.beginPath(); pctx.moveTo(PX(p), PY(p)); pctx.lineTo(PX(v), PY(v)); pctx.stroke(); }
   // the selected variant's path back to today
-  const path = pathTo(state.sel), on = new Set(path.map(v => v.id));
-  pctx.strokeStyle = C.ink; pctx.lineWidth = 2.6; pctx.beginPath();
-  path.forEach((v, i) => i ? pctx.lineTo(PX(v), PY(v)) : pctx.moveTo(PX(v), PY(v))); pctx.stroke();
-  for (const v of vs) {
-    const r = v.parent === null ? 6 : on.has(v.id) ? 5 : 3.6;
-    pctx.beginPath(); pctx.arc(PX(v), PY(v), r, 0, Math.PI * 2); pctx.fillStyle = KIND[kindOf(v)] || C.muted; pctx.fill();
-    pctx.strokeStyle = C.bg; pctx.lineWidth = 1.5; pctx.stroke();
-  }
-  const s = vs[state.sel];
-  pctx.beginPath(); pctx.arc(PX(s), PY(s), 9, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 2; pctx.stroke();
+  const locked = state.target !== null, path = locked ? pathTo(state.target) : [], on = new Set(path.map(v => v.id));
+  if (locked) { pctx.strokeStyle = C.ink; pctx.lineWidth = 2.6; pctx.beginPath();
+    path.forEach((v, i) => i ? pctx.lineTo(PX(v), PY(v)) : pctx.moveTo(PX(v), PY(v))); pctx.stroke(); }
+  // points: see-through, no halo; with a path locked, the path opaque and the rest fainter
+  const draw = v => { const r = v.parent === null ? 6 : on.has(v.id) ? 5 : 4;
+    pctx.globalAlpha = !locked ? 0.55 : on.has(v.id) ? 1 : 0.15;
+    pctx.beginPath(); pctx.arc(PX(v), PY(v), r, 0, Math.PI * 2); pctx.fillStyle = KIND[kindOf(v)] || C.muted; pctx.fill(); };
+  vs.filter(v => !on.has(v.id)).forEach(draw); path.forEach(draw);
+  pctx.globalAlpha = 1;
+  if (locked) { const s = vs[state.focus];
+    pctx.beginPath(); pctx.arc(PX(s), PY(s), 9, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 2; pctx.stroke(); }
   // name where each path ends, nudged apart
   const ends = new Map();
   for (const pth of R.paths) { const id = pth.path[pth.path.length - 1]; if (!ends.has(id)) ends.set(id, []); const t = viaLabel(pth.via); if (!ends.get(id).includes(t)) ends.get(id).push(t); }
@@ -315,7 +323,8 @@ pm.addEventListener("pointermove", e => {
       A search is listed once when lowering the worst path first and the total first made the same moves.</span>` : ""));
 });
 pm.addEventListener("pointerleave", () => tip.hidden = true);
-pm.addEventListener("click", e => { if (!R) return; const v = nearestPM(e); if (v) { state.sel = v.id; render(); } });
+pm.addEventListener("click", e => { if (!R) return; const v = nearestPM(e);
+  if (v) { state.target = state.focus = v.id; } else { state.target = null; state.focus = 0; } render(); });
 
 // ---- floorplan ----
 const cv = $("fp"), ctx = cv.getContext("2d");
