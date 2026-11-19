@@ -130,7 +130,7 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
           <span><i class="ln dash" style="border-color:var(--faint)"></i>outside every cone</span>
         </div>
         <div class="btns">
-          <button class="btn" id="tClk" type="button" aria-pressed="true">Clock wires: shown</button>
+          <span id="toggles" class="btns" style="margin-left:0"></span>
           <button class="btn" id="zPins" type="button">Zoom to pins</button>
           <button class="btn" id="zCells" type="button">Fit cells</button>
           <button class="btn" id="zFit" type="button">Fit die</button>
@@ -247,10 +247,14 @@ function zoomPins() {
   fitBox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), 0.12);
 }
 
-// Clock wires: any wire on a net named clk or clock. Hiding them changes only what is drawn and clickable.
-let showClk = true;
-const isClk = k => /^(clk|clock)\b/i.test(D.segInfo[k][4]);
-const vis = ks => showClk ? ks : ks.filter(k => !isClk(k));
+// Wire classes a button hides, by net name. Hiding changes only what is drawn and clickable.
+// Chip enable: the ce pin's net and each bank's ce_<n>; the bank-select decoder is shared with write enable, so it stays.
+const TOGGLES = [
+  { label: "Clock wires", re: /^(clk|clock)\b/i, on: true },
+  { label: "Chip enable wires", re: /^ce(_\d+)?$/i, on: true },
+];
+const hidden = k => TOGGLES.some(t => !t.on && t.re.test(D.segInfo[k][4]));
+const vis = ks => TOGGLES.every(t => t.on) ? ks : ks.filter(k => !hidden(k));
 function selection() {
   const S = selection0();
   if (S) S.groups = S.groups.map(([t, ks]) => [t, vis(ks)]);
@@ -452,13 +456,15 @@ cv.addEventListener("wheel", e => {
 $("zFit").onclick = () => fitBox(D.die[0], D.die[1], D.die[2], D.die[3], 0.03);
 $("zPins").onclick = zoomPins;
 $("zCells").onclick = fitCells;
-$("tClk").onclick = () => {
-  showClk = !showClk;
-  $("tClk").setAttribute("aria-pressed", String(showClk));
-  $("tClk").textContent = `Clock wires: ${showClk ? "shown" : "hidden"}`;
-  if (sel && sel.path && !showClk) { const ks = drawnSegs(selection()); sel.path = sel.path.segs.has(sel.path.k) && !isClk(sel.path.k) ? pathThrough(sel.path.k, ks) : null; renderSel(); }
+$("toggles").innerHTML = TOGGLES.map((t, j) =>
+  `<button class="btn" type="button" data-t="${j}" aria-pressed="true">${t.label}: shown</button>`).join("");
+$("toggles").addEventListener("click", e => {
+  const b = e.target.closest("[data-t]"); if (!b) return;
+  const t = TOGGLES[+b.dataset.t]; t.on = !t.on;
+  b.setAttribute("aria-pressed", String(t.on)); b.textContent = `${t.label}: ${t.on ? "shown" : "hidden"}`;
+  if (sel && sel.path) { sel.path = hidden(sel.path.k) ? null : pathThrough(sel.path.k, drawnSegs(selection())); renderSel(); }
   drawFP();
-};
+});
 
 // ---- selection panel ----
 function renderSel() {
