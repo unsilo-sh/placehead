@@ -109,7 +109,9 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
   <div id="app" hidden>
     <section class="card pareto" aria-label="Variants tried">
       <div class="pareto-head"><h2>Variants tried</h2>
-        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to lock its path from today below; click empty space to clear it.</p>
+        <p class="note">One point per placement a search reached, by how many moves it is from today and what it costs, or by both costs. A line joins each variant to the one it came from. Click a point to lock its path from today below; click empty space to clear it. Drag a box to zoom in; double-click to zoom out.</p>
+        <button class="btn" id="zoomReset" type="button" hidden>Reset zoom</button>
+        <button class="btn" id="logBtn" type="button" aria-pressed="false">Log scale: off</button>
         <div class="seg" id="metricSeg"><button type="button" data-v="worst">Moves × worst path</button><button type="button" data-v="total">Moves × total</button><button type="button" data-v="both">Worst path × total</button></div></div>
       <canvas id="pm"></canvas>
       <div class="plegend" id="plegend"></div>
@@ -147,7 +149,7 @@ const signed = (v, f = fmt) => Math.abs(v) < 0.5 ? "0" : `${v < 0 ? "−" : "+"}
 const pct = (v, b) => `${v <= b ? "−" : "+"}${Math.abs(100 * (v - b) / b).toFixed(0)}%`;
 let R = null, opened = false;
 // target: the variant selected in the Variants view; it locks the path. focus: the variant shown on the floorplan.
-const state = { metric: "worst", target: null, focus: 0 };
+const state = { metric: "worst", target: null, focus: 0, zoom: {}, log: false };   // zoom: per view, {x0, x1, y0, y1} in the view's units
 
 // ---- loading ----
 function check(d) {
@@ -244,10 +246,17 @@ function drawPM() {
   let x0 = both ? Math.min(...vs.map(fx)) : 0, x1 = both ? Math.max(...vs.map(fx)) : Math.max(1, dmax);
   if (both) { const px = (x1 - x0) * 0.04; x0 -= px; x1 += px; }
   let y0 = Math.min(...vs.map(fy)), y1 = Math.max(...vs.map(fy)); const pad = (y1 - y0) * 0.06; y0 -= pad; y1 += pad;
+  const z = state.zoom[state.metric];
+  if (z) ({ x0, x1, y0, y1 } = z);
+  $("zoomReset").hidden = !z;
   const L = 74, Rm = both ? 280 : 210, T = both ? 26 : 16, B = 40, w = W2 - L - Rm, h = H2 - T - B;
-  const X = v => L + (v - x0) / (x1 - x0) * w, Y = v => T + (1 - (v - y0) / (y1 - y0)) * h;
+  // distance axes may be logarithmic; the moves axis stays linear
+  const id_ = v => v, tx = both && state.log ? Math.log : id_, ty = state.log ? Math.log : id_;
+  const ux = both && state.log ? Math.exp : id_, uy = state.log ? Math.exp : id_;
+  const X = v => L + (tx(v) - tx(x0)) / (tx(x1) - tx(x0)) * w, Y = v => T + (1 - (ty(v) - ty(y0)) / (ty(y1) - ty(y0))) * h;
   const PX = v => X(fx(v)), PY = v => Y(fy(v));
-  PV = { PX, PY };
+  const inside = v => PX(v) >= L - 0.5 && PX(v) <= L + w + 0.5 && PY(v) >= T - 0.5 && PY(v) <= T + h + 0.5;
+  PV = { PX, PY, L, T, w, h, inside, ix: px => ux(tx(x0) + (px - L) / w * (tx(x1) - tx(x0))), iy: py => uy(ty(y0) + (1 - (py - T) / h) * (ty(y1) - ty(y0))) };
   const base = fy(vs[0]), yMetric = both ? "total" : state.metric;
   // grid and axes: absolute on the left, against today on the right
   pctx.font = `11px ${css("--font-body")}`; pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.fillStyle = C.muted;
@@ -262,14 +271,15 @@ function drawPM() {
     for (const g of [10, 20, 30, 40]) { const v = vs[0].worst * (1 - g / 100); if (v >= x0 && v <= x1) pctx.fillText(`−${g}%`, X(v), T - 4); }
     pctx.fillStyle = C.muted;
   } else {
-    const sx_ = dmax > 20 ? 5 : dmax > 10 ? 2 : 1;
-    for (let d = 0; d <= dmax; d += sx_) pctx.fillText(d, X(d), T + h + 6);
+    const span = x1 - x0, sx_ = span > 20 ? 5 : span > 10 ? 2 : 1;
+    for (let d = Math.max(0, Math.ceil(x0 / sx_) * sx_); d <= x1; d += sx_) pctx.fillText(d, X(d), T + h + 6);
   }
   pctx.textBaseline = "bottom"; pctx.fillText(both ? "worst path, µm" : "moves from today", L + w / 2, H2 - 4);
   pctx.save(); pctx.translate(16, T + h / 2); pctx.rotate(-Math.PI / 2); pctx.textBaseline = "middle";
   pctx.fillText(yMetric === "worst" ? "worst path, µm" : "total, mm", 0, 0); pctx.restore();
   pctx.textAlign = "left"; pctx.textBaseline = "middle"; pctx.fillStyle = C.faint;
   for (const g of [10, 20, 30, 40]) { const v = base * (1 - g / 100); if (v >= y0 && v <= y1) pctx.fillText(`−${g}%`, L + w + 6, Y(v)); }
+  pctx.save(); pctx.beginPath(); pctx.rect(L, T, w, h); pctx.clip();
   // every variant joined to its parent
   pctx.strokeStyle = C.line; pctx.lineWidth = 1.2;
   for (const v of vs) if (v.parent !== null) { const p = vs[v.parent]; pctx.beginPath(); pctx.moveTo(PX(p), PY(p)); pctx.lineTo(PX(v), PY(v)); pctx.stroke(); }
@@ -285,10 +295,11 @@ function drawPM() {
   pctx.globalAlpha = 1;
   if (locked) { const s = vs[state.focus];
     pctx.beginPath(); pctx.arc(PX(s), PY(s), 9, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 2; pctx.stroke(); }
-  // name where each path ends, nudged apart
+  pctx.restore();
+  // name where each path ends, nudged apart; while zoomed, only the ends inside the plot
   const ends = new Map();
   for (const pth of R.paths) { const id = pth.path[pth.path.length - 1]; if (!ends.has(id)) ends.set(id, []); const t = viaLabel(pth.via); if (!ends.get(id).includes(t)) ends.get(id).push(t); }
-  const labels = [...ends].map(([id, names]) => ({ v: vs[id], text: names.join("; ") })).sort((a, b) => PY(a.v) - PY(b.v));
+  const labels = [...ends].map(([id, names]) => ({ v: vs[id], text: names.join("; ") })).filter(l => inside(l.v)).sort((a, b) => PY(a.v) - PY(b.v));
   let lastY = -Infinity;
   pctx.font = `11px ${css("--font-body")}`; pctx.textAlign = "left"; pctx.textBaseline = "middle";
   for (const l of labels) {
@@ -297,6 +308,8 @@ function drawPM() {
     pctx.strokeStyle = C.line; pctx.lineWidth = 1; pctx.beginPath(); pctx.moveTo(PX(l.v) + 6, vy); pctx.lineTo(lx - 4, ly); pctx.stroke();
     pctx.fillStyle = on.has(l.v.id) ? C.ink : C.muted; pctx.fillText(`${l.text}  ${both ? `${pct(l.v.worst, vs[0].worst)} / ${pct(l.v.total, vs[0].total)}` : pct(fy(l.v), base)}`, lx, ly);
   }
+  if (zoomBox) { pctx.fillStyle = C.sel; pctx.globalAlpha = 0.08; pctx.fillRect(zoomBox.x, zoomBox.y, zoomBox.w, zoomBox.h);
+    pctx.globalAlpha = 1; pctx.strokeStyle = C.sel; pctx.lineWidth = 1; pctx.setLineDash([4, 3]); pctx.strokeRect(zoomBox.x, zoomBox.y, zoomBox.w, zoomBox.h); pctx.setLineDash([]); }
   $("plegend").innerHTML = `
     <span><i class="dot" style="background:var(--ink)"></i>today</span>
     <span><i class="dot" style="background:var(--sel)"></i>after a port move</span>
@@ -309,11 +322,11 @@ function drawPM() {
 function nearestPM(e) {
   const r = pm.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
   let best = null, bd = 9;
-  for (const v of R.variants) { const d = Math.hypot(PV.PX(v) - mx, PV.PY(v) - my); if (d < bd) { bd = d; best = v; } }
+  for (const v of R.variants) { if (!PV.inside(v)) continue; const d = Math.hypot(PV.PX(v) - mx, PV.PY(v) - my); if (d < bd) { bd = d; best = v; } }
   return best;
 }
 pm.addEventListener("pointermove", e => {
-  if (!R) return; const v = nearestPM(e); if (!v) return tip.hidden = true;
+  if (!R || press) return; const v = nearestPM(e); if (!v) return tip.hidden = true;
   const b = R.variants[0];
   showTip(e, `<b>variant ${v.id}</b>, ${v.depth} move${v.depth === 1 ? "" : "s"} from today<br>` +
     (v.parent === null ? "today's placement" : `last move: ${esc(v.move)}`) +
@@ -323,8 +336,34 @@ pm.addEventListener("pointermove", e => {
       A search is listed once when lowering the worst path first and the total first made the same moves.</span>` : ""));
 });
 pm.addEventListener("pointerleave", () => tip.hidden = true);
-pm.addEventListener("click", e => { if (!R) return; const v = nearestPM(e);
-  if (v) { state.target = state.focus = v.id; } else { state.target = null; state.focus = 0; } render(); });
+let press = null, zoomBox = null;
+const local = e => { const r = pm.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+pm.addEventListener("pointerdown", e => { if (!R) return; press = local(e); pm.setPointerCapture(e.pointerId); });
+pm.addEventListener("pointermove", e => {
+  if (!press) return;
+  const [x, y] = local(e);
+  if (Math.abs(x - press[0]) + Math.abs(y - press[1]) < 6) return;
+  const cl = (v, a, b) => Math.max(a, Math.min(b, v));
+  const ax = cl(press[0], PV.L, PV.L + PV.w), ay = cl(press[1], PV.T, PV.T + PV.h), bx = cl(x, PV.L, PV.L + PV.w), by = cl(y, PV.T, PV.T + PV.h);
+  zoomBox = { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
+  tip.hidden = true; drawPM();
+});
+pm.addEventListener("pointerup", e => {
+  if (!R || !press) return;
+  const box = zoomBox; press = null; zoomBox = null;
+  if (box && box.w > 6 && box.h > 6) {
+    state.zoom[state.metric] = { x0: PV.ix(box.x), x1: PV.ix(box.x + box.w), y0: PV.iy(box.y + box.h), y1: PV.iy(box.y) };
+    return drawPM();
+  }
+  if (box) return drawPM();
+  const v = nearestPM(e);
+  if (v) { state.target = state.focus = v.id; } else { state.target = null; state.focus = 0; }
+  render();
+});
+pm.addEventListener("dblclick", () => { delete state.zoom[state.metric]; drawPM(); });
+$("zoomReset").onclick = () => { delete state.zoom[state.metric]; drawPM(); };
+$("logBtn").onclick = () => { state.log = !state.log;
+  $("logBtn").setAttribute("aria-pressed", String(state.log)); $("logBtn").textContent = `Log scale: ${state.log ? "on" : "off"}`; drawPM(); };
 
 // ---- floorplan ----
 const cv = $("fp"), ctx = cv.getContext("2d");
