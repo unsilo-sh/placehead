@@ -93,7 +93,12 @@ The published results keep the bank array where it is: the aisle is kept for log
 move above the array or down toward the pins. Bank moves are then mirrors in place:
 `--k 48 --orders --keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200 --keepout 0,0,2450,80`.
 `--orders` also scores every bus order (8! = 40,320), each bank mirrored in place its best way, and
-keeps the orders on the front. The results page plots them all on its Pareto map.
+adds a path from today to each order no other order beats on both scores: one bus move at a time,
+then one mirror at a time.
+
+The results (format `placehead-headroom/2`) hold every variant tried, each with its parent, the
+variant one move before it, so any variant traces back to today. The results page draws them as a
+tree: moves from today against cost, worst path or total. Click a variant to see its path.
 
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
 Manhattan score. The bank spacing, die margin, pin keep-out and grid step are our choices, at

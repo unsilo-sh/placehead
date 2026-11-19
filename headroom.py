@@ -349,63 +349,122 @@ def bus_moves(start, order):
 
 def all_orders(D):
     """Every bus order, with each bank mirrored in place whichever way scores best for it
-    (lowest worst path, then lowest total; N on a tie). Banks stay where they are."""
+    (lowest worst path, then lowest total; N on a tie). Banks stay where they are.
+    Returns the orders no other order beats on both scores: (order, orientation per bank)."""
     st = D.initial()
     start = [b for b, _ in D.groups]
     nb = len(D.banks)
     pins = np.stack([np.stack([st["pos"][b] + flip(D.off, D.w, D.h, o) for b in range(nb)]) for o in ORIENTS])
-    rows, front_rows = [], []
+    rows = []
     for order in itertools.permutations(start):
         v = D.pin_worst(pins, D.extremes(list(order)))              # (orients, banks, pins)
         w, t = v.max(2), v.sum(2)
         pick = np.lexsort((t, w), axis=0)[0]                         # per bank, an orientation index
         ar = np.arange(nb)
-        rows.append(("".join(str(start.index(b)) for b in order), bus_moves(start, list(order)),
-                     int((pick != 0).sum()), float(w[pick, ar].max()), float(t[pick, ar].sum()), pick))
-    # the front: no other order is at least as good on both scores and better on one
-    rows.sort(key=lambda r: (r[3], r[4]))
-    best_t = float("inf")
+        rows.append((float(w[pick, ar].max()), float(t[pick, ar].sum()), list(order), [ORIENTS[i] for i in pick]))
+    rows.sort(key=lambda r: (r[0], r[1]))
+    front, best_t = [], float("inf")
     for r in rows:
-        if r[4] < best_t - 1e-6:
-            best_t = r[4]
-            front_rows.append(r)
-    front = []
-    for code, nbus, nmir, w, t, pick in front_rows:
-        order = [start[int(c)] for c in code]
-        s_ = dict(st, order=order, orient=[ORIENTS[i] for i in pick])
-        mv = [f"port: bus order {' '.join(order)} ({nbus} bus moves)"] if nbus else []
-        mv += [f"bank: {D.name(D.banks[b])} mirrored {ORIENTS[i]}" for b, i in enumerate(pick) if i]
-        front.append({"moves": mv, "worst": w, "total": t, "pos": s_["pos"].round(2).tolist(), "orient": s_["orient"],
-                      "order": order, "code": code, **D.detail(s_)})
-    return {"buses": start, "rows": [[r[0], r[1], r[2], round(r[3], 1), round(r[4], 1)] for r in rows], "front": front}
+        if r[1] < best_t - 1e-6:
+            best_t = r[1]
+            front.append((r[2], r[3]))
+    return front, len(rows)
 
 
-def search(D, objective, port_budget, k):
-    st, steps = D.initial(), []
+class Tree:
+    """Every variant tried, each with its parent: the variant one move before it. Today is variant 0.
+    A variant reached twice keeps its first parent; each path that reached it is named in "via"."""
+
+    def __init__(self, D):
+        self.D, self.vs, self.ix = D, [], {}
+        self.add(D.initial(), None, "today", None)
+
+    @staticmethod
+    def key(st):
+        return (tuple(st["order"]), tuple(st["orient"]), tuple(np.round(st["pos"], 1).ravel()))
+
+    def add(self, st, parent, move, via):
+        k = self.key(st)
+        if k in self.ix:
+            v = self.vs[self.ix[k]]
+            if via and via not in v["via"]:
+                v["via"].append(via)
+            return v["id"]
+        w, t = self.D.scores(st)
+        v = {"id": len(self.vs), "parent": parent, "move": move,
+             "depth": 0 if parent is None else self.vs[parent]["depth"] + 1,
+             "worst": w, "total": t, "via": [via] if via else [],
+             "pos": st["pos"].round(2).tolist(), "orient": list(st["orient"]), "order": list(st["order"]),
+             **self.D.detail(st)}
+        self.ix[k] = v["id"]
+        self.vs.append(v)
+        return v["id"]
+
+
+def bank_move_text(D, st, b, pos, o):
+    name = D.name(D.banks[b])
+    if np.allclose(pos, st["pos"][b]):
+        return f"mirror: {name} to {o}"
+    return f"bank: {name} to ({pos[0]:.0f}, {pos[1]:.0f}) {o}"
+
+
+def search(D, tree, objective, port_budget, k):
+    """Greedy: the best port moves first, then up to k bank moves. Adds each variant to the tree."""
+    st, at = D.initial(), 0
+    via = f"search: lower the {'worst path' if objective == 'worst' else 'total'} first, up to {port_budget} port move{'s' if port_budget != 1 else ''}"
     key = lambda s: s if objective == "worst" else s[::-1]
-
-    def record():
-        w, t = D.scores(st)
-        steps.append({"moves": list(st["moves"]), "worst": w, "total": t, "pos": st["pos"].round(2).tolist(),
-                      "orient": list(st["orient"]), "order": list(st["order"]), **D.detail(st)})
-
+    path = [0]
     for _ in range(port_budget):
         mv = D.best_port_move(st, objective)
         if mv is None or mv[0] >= key(D.scores(st)):
             break
         _, b, j, st["order"] = mv
-        st["moves"].append(f"port: {b} pins to place {j + 1} of {len(st['order'])}")
-    record()
+        at = tree.add(st, at, f"port: {b} pins to place {j + 1} of {len(st['order'])}", via)
+        path.append(at)
     grid = D.score_grid(D.extremes(st["order"]))
     for _ in range(k):
         mv = D.best_bank_move(st, objective, grid)
         if mv is None or mv[0] >= key(D.scores(st)):
             break
         _, b, pos, o = mv
+        if np.allclose(pos, st["pos"][b], atol=1.0):
+            pos = st["pos"][b].copy()      # the grid's nearest point to where the bank is: a mirror in place
+        text = bank_move_text(D, st, b, pos, o)
         st["pos"][b], st["orient"][b] = pos, o
-        st["moves"].append(f"bank: {D.name(D.banks[b])} to ({pos[0]:.0f}, {pos[1]:.0f}) {o}")
-        record()
-    return steps
+        at = tree.add(st, at, text, via)
+        path.append(at)
+    return {"via": via, "path": path}
+
+
+def order_path(D, tree, order, orient, via):
+    """A path from today to a bus order and its mirrors: one bus move at a time, each the move toward
+    the order that scores best, then one mirror at a time, best first."""
+    st, at, path = D.initial(), 0, [0]
+    while bus_moves(order, st["order"]):
+        best = None
+        for b in st["order"]:
+            rest = [g for g in st["order"] if g != b]
+            for j in range(len(rest) + 1):
+                o = rest[:j] + [b] + rest[j:]
+                if bus_moves(order, o) < bus_moves(order, st["order"]):
+                    sc = D.scores(dict(st, order=o))
+                    if best is None or sc < best[0]:
+                        best = (sc, b, j, o)
+        _, b, j, st["order"] = best
+        at = tree.add(st, at, f"port: {b} pins to place {j + 1} of {len(order)}", via)
+        path.append(at)
+    todo = [b for b in range(len(D.banks)) if orient[b] != st["orient"][b]]
+    while todo:
+        def after(b):
+            t = list(st["orient"]); t[b] = orient[b]
+            return D.scores(dict(st, orient=t))
+        b = min(todo, key=after)
+        todo.remove(b)
+        text = bank_move_text(D, st, b, st["pos"][b], orient[b])
+        st["orient"][b] = orient[b]
+        at = tree.add(st, at, text, via)
+        path.append(at)
+    return {"via": via, "path": path}
 
 
 def main(argv=None):
@@ -415,7 +474,7 @@ def main(argv=None):
     ap.add_argument("--ports", type=int, default=2, help="most port moves")
     ap.add_argument("--check-lp", action="store_true", help="also place the gates by a linear program")
     ap.add_argument("--orders", action="store_true",
-                    help="also score every bus order, banks mirrored in place (about a minute for 8 buses)")
+                    help="also score every bus order, banks mirrored in place, and add a path to each best one (about a minute for 8 buses)")
     ap.add_argument("--keepout", action="append", default=[], metavar="X0,Y0,X1,Y1",
                     help="a rectangle no bank may overlap, in um; repeat for more")
     ap.add_argument("-o", "--out", default="out/headroom.json")
@@ -432,22 +491,22 @@ def main(argv=None):
     for k, v in base.items():
         print(f"current, {k:5s}: worst {v['worst']:6.0f} um, total {v['total'] / 1000:7.1f} mm")
 
-    runs = []
+    tree, paths = Tree(D), []
     for objective in ("worst", "total"):
         for p in range(args.ports + 1):
-            steps = search(D, objective, p, args.k)
-            runs.append({"objective": objective, "port_budget": p, "steps": steps})
-            for s in steps:
-                nb = sum(m.startswith("bank") for m in s["moves"])
-                print(f"lower {objective:5s} | ports <= {p}, bank moves {nb}: worst {s['worst']:6.0f} um, "
-                      f"total {s['total'] / 1000:7.1f} mm | {s['moves'][-1] if s['moves'] else 'no move'}")
-    orders = None
+            paths.append(search(D, tree, objective, p, args.k))
     if args.orders:
-        orders = all_orders(D)
-        print(f"scored {len(orders['rows'])} bus orders; {len(orders['front'])} on the front")
-    json.dump({"format": "placehead-headroom/1", "geometry": D.geometry(), "orders": orders,
+        front, n = all_orders(D)
+        print(f"scored {n} bus orders; {len(front)} no other order beats on both scores")
+        for order, orient in front:
+            paths.append(order_path(D, tree, order, orient, f"best bus order: {' '.join(order)}"))
+    for pth in paths:
+        v = tree.vs[pth["path"][-1]]
+        print(f"{pth['via']}: {len(pth['path']) - 1} moves, worst {v['worst']:6.0f} um, total {v['total'] / 1000:7.1f} mm")
+    print(f"{len(tree.vs)} variants")
+    json.dump({"format": "placehead-headroom/2", "geometry": D.geometry(),
                "settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP, "KEEPOUTS": KEEPOUTS},
-               "pins": D.pins, "base": base, "runs": runs}, open(args.out, "w"), separators=(",", ":"))
+               "pins": D.pins, "base": base, "variants": tree.vs, "paths": paths}, open(args.out, "w"), separators=(",", ":"))
     print("wrote", args.out)
 
 
