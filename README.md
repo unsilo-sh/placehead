@@ -87,6 +87,9 @@ port moves, then up to K bank moves, greedily.
 python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o out/headroom.json
 ```
 
+`--keepout X0,Y0,X1,Y1` (repeatable) reserves a rectangle no bank may overlap, for example the aisle
+between the bank groups: `--keepout 1044.5,0,1405,2200`.
+
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
 straight-line score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
 the top of the file.

@@ -35,6 +35,7 @@ from scipy.optimize import linprog
 from scipy.sparse import coo_matrix
 
 GAP, MARGIN, PIN_KEEPOUT, STEP = 15.0, 10.0, 20.0, 10.0
+KEEPOUTS = []   # rectangles (x0, y0, x1, y1) no bank may overlap, e.g. an aisle kept for logic
 ORIENTS = ("N", "FN", "FS", "S")
 SIGNS = np.array([[1, 1], [1, -1], [-1, 1], [-1, -1]], float)
 
@@ -197,11 +198,18 @@ class Design:
         by = (y > pos[1] - self.h - GAP) & (y < pos[1] + self.h + GAP)
         return by[:, None] & bx[None, :]
 
+    def kept_out(self, x, y):
+        """Grid cells where a bank would overlap a keep-out rectangle."""
+        out = np.zeros((len(y), len(x)), bool)
+        for x0, y0, x1, y1 in KEEPOUTS:
+            out |= ((y + self.h > y0) & (y < y1))[:, None] & ((x + self.w > x0) & (x < x1))[None, :]
+        return out
+
     def best_bank_move(self, st, objective, grid):
         x, y, gw, gt = grid
         bs = self.bank_scores(st, self.extremes(st["order"]))
         paint = [self.blocked_by(x, y, p) for p in st["pos"]]
-        count = np.sum(paint, axis=0)
+        count = np.sum(paint, axis=0) + self.kept_out(x, y)
         best = None
         for b in range(len(self.banks)):
             free = (count - paint[b]) == 0
@@ -362,8 +370,11 @@ def main(argv=None):
     ap.add_argument("--k", type=int, default=8, help="most bank moves")
     ap.add_argument("--ports", type=int, default=2, help="most port moves")
     ap.add_argument("--check-lp", action="store_true", help="also place the gates by a linear program")
+    ap.add_argument("--keepout", action="append", default=[], metavar="X0,Y0,X1,Y1",
+                    help="a rectangle no bank may overlap, in um; repeat for more")
     ap.add_argument("-o", "--out", default="out/headroom.json")
     args = ap.parse_args(argv)
+    KEEPOUTS[:] = [tuple(float(v) for v in k.split(",")) for k in args.keepout]
 
     D = Design(json.load(open(args.graph)))
     st0 = D.initial()
@@ -385,7 +396,7 @@ def main(argv=None):
                 print(f"lower {objective:5s} | ports <= {p}, bank moves {nb}: worst {s['worst']:6.0f} um, "
                       f"total {s['total'] / 1000:7.1f} mm | {s['moves'][-1] if s['moves'] else 'no move'}")
     json.dump({"format": "placehead-headroom/1", "geometry": D.geometry(),
-               "settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP},
+               "settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP, "KEEPOUTS": KEEPOUTS},
                "pins": D.pins, "base": base, "runs": runs}, open(args.out, "w"), separators=(",", ":"))
     print("wrote", args.out)
 
