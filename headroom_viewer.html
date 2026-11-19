@@ -298,7 +298,9 @@ pm.addEventListener("pointermove", e => {
   showTip(e, `<b>variant ${v.id}</b>, ${v.depth} move${v.depth === 1 ? "" : "s"} from today<br>` +
     (v.parent === null ? "today's placement" : `last move: ${esc(v.move)}`) +
     `<br>worst ${fmt(v.worst)} µm (${pct(v.worst, b.worst)}), total ${mm(v.total)} mm (${pct(v.total, b.total)})` +
-    (v.via.length ? `<br><span style="color:var(--muted)">reached by ${v.via.map(x => esc(viaLabel(x)) + (x.startsWith("best bus order") ? ` (${esc(x.replace("best bus order: ", ""))})` : "")).join("; ")}</span>` : ""));
+    (v.via.length ? `<br><span style="color:var(--muted)">On the path of: ${[...new Set(v.via.map(x => viaLabel(x).replace(/^search, /, "the search allowed ")
+      + (x.startsWith("best bus order") ? ` (${x.replace("best bus order: ", "")})` : "")))].map(esc).join("; ")}.
+      A search is listed once when lowering the worst path first and the total first made the same moves.</span>` : ""));
 });
 pm.addEventListener("pointerleave", () => tip.hidden = true);
 pm.addEventListener("click", e => { if (!R) return; const v = nearestPM(e); if (v) { state.sel = v.id; render(); } });
