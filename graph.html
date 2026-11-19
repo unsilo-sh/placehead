@@ -249,8 +249,10 @@ function zoomPins() {
 
 // Wire classes a button hides. Hiding changes only what is drawn and clickable.
 // A non-bus wire carries no single bit of a bus (segBus, from make_graph_html.py): clock, enables, decoded selects.
+// A wire outside cones (drawn dashed) is in no def2graph cone. In sparse_mem_core these are the address and write-data flops' wires into the banks.
 const TOGGLES = [
   { label: "Non-bus wires", test: k => !D.segBus[k], on: true },
+  { label: "Wires outside cones", test: k => !D.segInCone[k], on: true },
 ];
 const hidden = k => TOGGLES.some(t => !t.on && t.test(k));
 const vis = ks => TOGGLES.every(t => t.on) ? ks : ks.filter(k => !hidden(k));
