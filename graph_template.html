@@ -134,7 +134,7 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
         </div>
       </div>
       <canvas id="fp"></canvas>
-      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
+      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it, then click one of its wires to follow every path through it. Hover over a corner to name its cell. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
     </section>
 
     <div class="side">
@@ -245,6 +245,60 @@ function selection() {
   return { members: new Set([sel.i]), groups: [["--win", b.in], ["--wout", b.out]], ends: [sel.i], focus: sel.i };
 }
 
+// ---- paths through one wire ----
+const SI = D.segInfo;   // [driver node, driver pin, sink node, sink pin, net, length]
+const isComb = n => n < NI && D.kinds[D.inst[n][1]] === "comb";
+function pathThrough(k, ks) {
+  const byDrv = new Map(), bySnk = new Map();
+  for (const j of ks) {
+    if (!byDrv.has(SI[j][0])) byDrv.set(SI[j][0], []); byDrv.get(SI[j][0]).push(j);
+    if (!bySnk.has(SI[j][2])) bySnk.set(SI[j][2], []); bySnk.get(SI[j][2]).push(j);
+  }
+  // Wires upstream of a gate feed its inputs; wires downstream leave its outputs. Flops, banks and pins end a path.
+  const up = new Map(), dn = new Map();
+  const upLen = n => { if (up.has(n)) return up.get(n); up.set(n, 0);
+    const v = isComb(n) ? Math.max(0, ...(bySnk.get(n) || []).map(j => upLen(SI[j][0]) + SI[j][5])) : 0; up.set(n, v); return v; };
+  const dnLen = n => { if (dn.has(n)) return dn.get(n); dn.set(n, 0);
+    const v = isComb(n) ? Math.max(0, ...(byDrv.get(n) || []).map(j => SI[j][5] + dnLen(SI[j][2]))) : 0; dn.set(n, v); return v; };
+  const segs = new Set([k]), stack = [[SI[k][0], -1], [SI[k][2], 1]], seen = new Set();
+  while (stack.length) {
+    const [n, dir] = stack.pop(), key = n * 2 + (dir > 0);
+    if (seen.has(key) || !isComb(n)) continue; seen.add(key);
+    for (const j of (dir < 0 ? bySnk : byDrv).get(n) || []) { segs.add(j); stack.push([SI[j][dir < 0 ? 0 : 2], dir]); }
+  }
+  // Each node's longest wire length from a start of these paths, along these wires only.
+  const into = new Map(); for (const j of segs) { if (!into.has(SI[j][2])) into.set(SI[j][2], []); into.get(SI[j][2]).push(j); }
+  const at = new Map();
+  const from = n => { if (at.has(n)) return at.get(n); at.set(n, 0);
+    const v = Math.max(0, ...(into.get(n) || []).map(j => from(SI[j][0]) + SI[j][5])); at.set(n, v); return v; };
+  const nodes = new Set(); for (const j of segs) { nodes.add(SI[j][0]); nodes.add(SI[j][2]); }
+  const order = [...nodes].sort((a, b) => from(a) - from(b));
+  return { k, segs, nodes: order, total: upLen(SI[k][0]) + SI[k][5] + dnLen(SI[k][2]), from };
+}
+const drawnSegs = S => S ? S.groups.flatMap(g => g[1]) : [];
+function segDist(X, Y, k) {
+  const q = D.segs[k], ax = sx(q[0]), ay = sy(q[1]), bx = sx(q[2]), by = sy(q[3]);
+  const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+  const t = L2 ? Math.max(0, Math.min(1, ((X - ax) * dx + (Y - ay) * dy) / L2)) : 0;
+  return Math.hypot(X - ax - t * dx, Y - ay - t * dy);
+}
+function hitSeg(X, Y, ks) { let best = null, bd = 5; for (const k of ks) { const d = segDist(X, Y, k); if (d < bd) { bd = d; best = k; } } return best; }
+function hitCorner(X, Y, ks) {
+  let best = null, bd = 7;
+  for (const k of ks) for (const [e, n] of [[0, SI[k][0]], [1, SI[k][2]]]) {
+    const q = D.segs[k], d = Math.hypot(X - sx(q[e * 2]), Y - sy(q[e * 2 + 1])); if (d < bd) { bd = d; best = n; } }
+  return best;
+}
+function cornerTip(n, ks) {
+  const ins = new Set(), outs = new Set();
+  for (const k of ks) { if (SI[k][2] === n) ins.add(SI[k][3]); if (SI[k][0] === n) outs.add(SI[k][1]); }
+  const pins = [ins.size ? `in ${[...ins].slice(0, 4).map(esc).join(", ")}${ins.size > 4 ? ` +${ins.size - 4}` : ""}` : "",
+    outs.size ? `out ${[...outs].slice(0, 4).map(esc).join(", ")}${outs.size > 4 ? ` +${outs.size - 4}` : ""}` : ""].filter(Boolean).join(" · ");
+  return describe(n) + (pins ? `<br>pins on drawn wires: ${pins}` : "");
+}
+const segTip = k => { const q = SI[k];
+  return `wire on net <b>${esc(q[4])}</b><br>${esc(nameOf(q[0]))}.${esc(q[1])} → ${esc(nameOf(q[2]))}.${esc(q[3])}<br>${q[5].toFixed(1)} µm${D.segInCone[k] ? "" : ", outside every cone"}`; };
+
 function drawFP() {
   if (!W) return;
   const C = { die: css("--die"), line: css("--faint"), comb: css("--comb"), flop: css("--flop"), mem: css("--mem"),
@@ -279,7 +333,8 @@ function drawFP() {
   }
   ctx.globalAlpha = 1;
   if (S) {
-    ctx.lineWidth = 1.4; ctx.globalAlpha = 0.85;
+    const P = sel.path;
+    ctx.lineWidth = 1.4; ctx.globalAlpha = P ? 0.18 : 0.85;
     for (const [tok, ks] of S.groups) for (const dashed of [0, 1]) {
       ctx.strokeStyle = css(tok); ctx.setLineDash(dashed ? [5, 4] : []); ctx.beginPath();
       for (const k of ks) { if (!D.segInCone[k] !== !!dashed) continue;
@@ -287,6 +342,19 @@ function drawFP() {
       ctx.stroke();
     }
     ctx.setLineDash([]); ctx.globalAlpha = 1;
+    if (P) {
+      const tok = (S.groups.find(g => g[1].includes(P.k)) || S.groups[0])[0];
+      ctx.strokeStyle = css(tok); ctx.lineWidth = 2.6;
+      for (const dashed of [0, 1]) { ctx.setLineDash(dashed ? [6, 4] : []); ctx.beginPath();
+        for (const k of P.segs) { if (!D.segInCone[k] !== !!dashed) continue;
+          const q = D.segs[k]; ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); }
+        ctx.stroke(); }
+      ctx.setLineDash([]);
+      const q = D.segs[P.k]; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); ctx.stroke();
+      for (const n of P.nodes) { if (!isComb(n)) continue; const [x, y] = center(n);
+        ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.fillStyle = css("--panel"); ctx.fill();
+        ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.stroke(); }
+    }
     for (const i of S.ends) { if (i >= NI || D.kinds[D.inst[i][1]] === "memory") continue;
       const [x, y] = center(i); ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.strokeStyle = C.sel; ctx.lineWidth = 1.5; ctx.stroke(); }
     const [fx, fy] = center(S.focus);
@@ -294,6 +362,11 @@ function drawFP() {
   }
 }
 
+function hitPort(X, Y) {
+  const x = wx(X), y = wy(Y), tol = 6 / view.s; let best = null, bd = Infinity;
+  for (let k = 0; k < D.ports.length; k++) { const d = Math.hypot(D.ports[k][2] - x, D.ports[k][3] - y); if (d < tol && d < bd) { bd = d; best = NI + k; } }
+  return best;
+}
 function hit(X, Y) {
   const x = wx(X), y = wy(Y), tol = 6 / view.s;
   let best = null, bd = Infinity;
@@ -326,16 +399,26 @@ cv.addEventListener("pointermove", e => {
   if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
     if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
     if (drag.moved) { view.ox = drag.ox + dx; view.oy = drag.oy + dy; drawFP(); hideTip(); return; } }
-  const i = hit(e.clientX - r.left, e.clientY - r.top);
+  const X = e.clientX - r.left, Y = e.clientY - r.top, S = selection(), ks = sel && sel.path ? [...sel.path.segs] : drawnSegs(S);
+  if (S) {
+    const p = hitPort(X, Y); if (p !== null) return showTip(e, describe(p));
+    const n = hitCorner(X, Y, ks); if (n !== null && n !== sel.i) return showTip(e, cornerTip(n, ks));
+    const k = hitSeg(X, Y, ks); if (k !== null) return showTip(e, segTip(k));
+  }
+  const i = hit(X, Y);
   if (i === null) hideTip(); else showTip(e, describe(i));
 });
 cv.addEventListener("pointerup", e => {
   const r = cv.getBoundingClientRect(), moved = drag && drag.moved; drag = null;
   if (moved) return;
-  const i = hit(e.clientX - r.left, e.clientY - r.top);
+  const X = e.clientX - r.left, Y = e.clientY - r.top, S = selection();
+  const p = hitPort(X, Y); if (p !== null) return select({ kind: "port", name: nameOf(p) });
+  if (S) { const ks = drawnSegs(S), k = hitSeg(X, Y, ks);
+    if (k !== null) { sel.path = pathThrough(k, ks); drawFP(); renderSel(); return; } }
+  const i = hit(X, Y);
+  if (i !== null && i < NI && D.kinds[D.inst[i][1]] === "memory") { if (!(sel && sel.i === i)) select({ kind: "bank", i }); return; }
+  if (sel && sel.path) { sel.path = null; drawFP(); renderSel(); return; }
   if (i === null) select(null);
-  else if (i >= NI) select({ kind: "port", name: nameOf(i) });
-  else if (D.kinds[D.inst[i][1]] === "memory") select({ kind: "bank", i });
 });
 cv.addEventListener("pointerleave", hideTip);
 cv.addEventListener("wheel", e => {
@@ -394,6 +477,16 @@ function renderSel() {
         <tbody>${Object.entries(b.groups).map(([g, [n, r]]) => `<tr><td class="mono">${esc(g)}</td><td class="n">${r}</td><td class="n">${n}</td></tr>`).join("")}</tbody></table>
       <p class="note">${b.in.length} wires into the bank and ${b.out.length} out of it, traced back to a flop or a top-level pin and forward to the same. ${b.in.concat(b.out).filter(k => !D.segInCone[k]).length} of them are outside every def2graph cone (dashed).</p>
       <p class="note">Top-level pins by bus: ${Object.entries(perBus).map(([k, v]) => `<span class="mono">${esc(k)}</span> ${v}`).join(", ") || "none"}.</p>`;
+  }
+  if (sel.path) {
+    const P = sel.path, gates = P.nodes.filter(isComb).length;
+    el.insertAdjacentHTML("beforeend", `<div style="display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px">
+      <div class="sel-head"><span class="label">Paths through the clicked wire</span><button class="btn clear" type="button" id="clrPath">Clear path</button></div>
+      <p class="note">${P.segs.size} wires and ${gates} logic gates. The longest route through the clicked wire is ${fmt(P.total)} µm of wire. The clicked wire is ${esc(nameOf(SI[P.k][0]))}.${esc(SI[P.k][1])} → ${esc(nameOf(SI[P.k][2]))}.${esc(SI[P.k][3])}.</p>
+      <div class="tscroll"><table><thead><tr><th>Cell or pin</th><th>Type</th><th class="n">Longest wire µm to here</th></tr></thead><tbody>
+      ${P.nodes.map(n => `<tr><td class="mono">${esc(nameOf(n))}</td><td>${n >= NI ? "top-level pin" : esc(D.cells[D.inst[n][6]])}</td><td class="n">${fmt(P.from(n))}</td></tr>`).join("")}
+      </tbody></table></div></div>`);
+    $("clrPath").onclick = () => { sel.path = null; drawFP(); renderSel(); };
   }
   $("clr").onclick = () => select(null);
 }

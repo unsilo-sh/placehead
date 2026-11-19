@@ -256,6 +256,9 @@ def main(argv=None):
         "ports": [[r.name, r.direction[0], um(r.x), um(r.y)] for r in ports.itertuples()],
         "segs": segs,
         "segInCone": [int(k in in_any_cone) for k in range(len(segs))],
+        # Per wire: driver node, driver pin, sink node, sink pin, net, length (um).
+        "segInfo": [[idx[node_of(*d)], d[1], idx[node_of(*s)], s[1], net, round(L, 2)]
+                    for net, d, s, L in seg_net],
         "cones": data_cones,
         "banks": banks,
         "summary": {"flop_endpoints": summary["cell_boundaries"]["flop_endpoints_total"],
