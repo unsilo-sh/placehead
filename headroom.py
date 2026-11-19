@@ -27,6 +27,8 @@ Our choices, not the spec's: bank spacing GAP, die margin MARGIN, the keep-out a
 row PIN_KEEPOUT, the position grid STEP, the scores, and the search order.
 """
 import argparse
+import bisect
+import itertools
 import json
 from collections import defaultdict
 
@@ -336,6 +338,48 @@ class Design:
         return float(max(v)), float(sum(v))
 
 
+def bus_moves(start, order):
+    """The fewest port moves from start to order: buses minus the longest run already in start's order."""
+    run = []
+    for p in (start.index(b) for b in order):
+        i = bisect.bisect_left(run, p)
+        run[i:i + 1] = [p]
+    return len(order) - len(run)
+
+
+def all_orders(D):
+    """Every bus order, with each bank mirrored in place whichever way scores best for it
+    (lowest worst path, then lowest total; N on a tie). Banks stay where they are."""
+    st = D.initial()
+    start = [b for b, _ in D.groups]
+    nb = len(D.banks)
+    pins = np.stack([np.stack([st["pos"][b] + flip(D.off, D.w, D.h, o) for b in range(nb)]) for o in ORIENTS])
+    rows, front_rows = [], []
+    for order in itertools.permutations(start):
+        v = D.pin_worst(pins, D.extremes(list(order)))              # (orients, banks, pins)
+        w, t = v.max(2), v.sum(2)
+        pick = np.lexsort((t, w), axis=0)[0]                         # per bank, an orientation index
+        ar = np.arange(nb)
+        rows.append(("".join(str(start.index(b)) for b in order), bus_moves(start, list(order)),
+                     int((pick != 0).sum()), float(w[pick, ar].max()), float(t[pick, ar].sum()), pick))
+    # the front: no other order is at least as good on both scores and better on one
+    rows.sort(key=lambda r: (r[3], r[4]))
+    best_t = float("inf")
+    for r in rows:
+        if r[4] < best_t - 1e-6:
+            best_t = r[4]
+            front_rows.append(r)
+    front = []
+    for code, nbus, nmir, w, t, pick in front_rows:
+        order = [start[int(c)] for c in code]
+        s_ = dict(st, order=order, orient=[ORIENTS[i] for i in pick])
+        mv = [f"port: bus order {' '.join(order)} ({nbus} bus moves)"] if nbus else []
+        mv += [f"bank: {D.name(D.banks[b])} mirrored {ORIENTS[i]}" for b, i in enumerate(pick) if i]
+        front.append({"moves": mv, "worst": w, "total": t, "pos": s_["pos"].round(2).tolist(), "orient": s_["orient"],
+                      "order": order, "code": code, **D.detail(s_)})
+    return {"buses": start, "rows": [[r[0], r[1], r[2], round(r[3], 1), round(r[4], 1)] for r in rows], "front": front}
+
+
 def search(D, objective, port_budget, k):
     st, steps = D.initial(), []
     key = lambda s: s if objective == "worst" else s[::-1]
@@ -370,6 +414,8 @@ def main(argv=None):
     ap.add_argument("--k", type=int, default=8, help="most bank moves")
     ap.add_argument("--ports", type=int, default=2, help="most port moves")
     ap.add_argument("--check-lp", action="store_true", help="also place the gates by a linear program")
+    ap.add_argument("--orders", action="store_true",
+                    help="also score every bus order, banks mirrored in place (about a minute for 8 buses)")
     ap.add_argument("--keepout", action="append", default=[], metavar="X0,Y0,X1,Y1",
                     help="a rectangle no bank may overlap, in um; repeat for more")
     ap.add_argument("-o", "--out", default="out/headroom.json")
@@ -395,7 +441,11 @@ def main(argv=None):
                 nb = sum(m.startswith("bank") for m in s["moves"])
                 print(f"lower {objective:5s} | ports <= {p}, bank moves {nb}: worst {s['worst']:6.0f} um, "
                       f"total {s['total'] / 1000:7.1f} mm | {s['moves'][-1] if s['moves'] else 'no move'}")
-    json.dump({"format": "placehead-headroom/1", "geometry": D.geometry(),
+    orders = None
+    if args.orders:
+        orders = all_orders(D)
+        print(f"scored {len(orders['rows'])} bus orders; {len(orders['front'])} on the front")
+    json.dump({"format": "placehead-headroom/1", "geometry": D.geometry(), "orders": orders,
                "settings": {"GAP": GAP, "MARGIN": MARGIN, "PIN_KEEPOUT": PIN_KEEPOUT, "STEP": STEP, "KEEPOUTS": KEEPOUTS},
                "pins": D.pins, "base": base, "runs": runs}, open(args.out, "w"), separators=(",", ":"))
     print("wrote", args.out)

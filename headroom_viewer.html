@@ -56,6 +56,14 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
 .kval { font-family: var(--font-mono); font-size: 13px; min-width: 7ch; font-variant-numeric: tabular-nums; }
 
 #app { display: grid; gap: 18px; }
+.pareto { display: grid; }
+.pareto-head { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; padding: 12px 14px 8px; border-bottom: 1px solid var(--line); }
+.pareto-head .note { flex: 1 1 320px; }
+.plegend { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; padding: 8px 14px; font-size: 12px; color: var(--muted); }
+.plegend span { display: inline-flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.seqramp { width: 90px; height: 9px; border-radius: 2px; display: inline-block; background: linear-gradient(90deg, #cde2fb, #6da7ec, #256abf, #0d366b); }
+#pm { display: block; width: 100%; height: 420px; cursor: crosshair; }
 #app[hidden] { display: none; }
 .main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 18px; align-items: start; }
 @media (max-width: 980px) { .main { grid-template-columns: minmax(0, 1fr); } }
@@ -115,6 +123,13 @@ body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
           <input type="range" id="k" min="0" max="8" step="1" value="0" aria-label="Bank moves">
           <button class="btn" id="kNext" type="button" aria-label="One bank move more">▶</button>
           <span class="kval" id="kval"></span></div></div>
+    </section>
+
+    <section class="card pareto" aria-label="Pareto map">
+      <div class="pareto-head"><h2>Pareto map</h2>
+        <p class="note">Each point is a placement. Lower and further left is better on both scores. Hover over a point for its moves and gains; click a search step or a front point to show it on the floorplan.</p></div>
+      <canvas id="pm"></canvas>
+      <div class="plegend" id="plegend"></div>
     </section>
 
     <div class="main">
@@ -184,13 +199,13 @@ fetch("headroom.json").then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`
 
 // ---- selection ----
 const run = (o = state.objective, p = state.ports) => R.runs.find(r => r.objective === o && r.port_budget === p);
-const step = () => { const r = run(); return r.steps[Math.min(state.k, r.steps.length - 1)]; };
-$("objSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.objective = b.dataset.v; render(); } });
-$("portSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.ports = +b.dataset.v; render(); } });
-$("k").addEventListener("input", e => { state.k = +e.target.value; render(); });
-$("kPrev").onclick = () => { state.k = Math.max(0, state.k - 1); render(); };
-$("kNext").onclick = () => { state.k = Math.min(run().steps.length - 1, state.k + 1); render(); };
-$("mlist").addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b) { state.k = +b.dataset.k; render(); } });
+const step = () => { if (state.custom) return state.custom; const r = run(); return r.steps[Math.min(state.k, r.steps.length - 1)]; };
+$("objSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.objective = b.dataset.v; state.custom = null; render(); } });
+$("portSeg").addEventListener("click", e => { const b = e.target.closest("[data-v]"); if (b) { state.ports = +b.dataset.v; state.custom = null; render(); } });
+$("k").addEventListener("input", e => { state.k = +e.target.value; state.custom = null; render(); });
+$("kPrev").onclick = () => { state.k = Math.max(0, state.k - 1); state.custom = null; render(); };
+$("kNext").onclick = () => { state.k = Math.min(run().steps.length - 1, state.k + 1); state.custom = null; render(); };
+$("mlist").addEventListener("click", e => { const b = e.target.closest("[data-k]"); if (b && !state.custom) { state.k = +b.dataset.k; render(); } });
 
 function render() {
   for (const b of $("objSeg").children) b.setAttribute("aria-pressed", String(b.dataset.v === state.objective));
@@ -199,7 +214,7 @@ function render() {
   state.k = Math.min(state.k, n);
   $("k").max = n; $("k").value = state.k;
   $("kval").textContent = `${state.k} of ${n}`;
-  tiles(); moves(); drawFP();
+  tiles(); moves(); drawFP(); drawPM();
 }
 
 // ---- scores ----
@@ -218,6 +233,13 @@ function tiles() {
 }
 
 function moves() {
+  if (state.custom) {
+    const ms = state.custom.moves;
+    $("mlist").innerHTML = `<p class="note" style="padding:4px 14px 8px">A bus order from the Pareto map's front, every bank mirrored its best way. Use the controls above to go back to the searches.</p>` +
+      ms.map(m => { const [kind, ...rest] = m.split(": ");
+        return `<div class="move current"><span class="tag ${kind === "port" ? "port" : ""}">${kind}</span><span class="what">${esc(rest.join(": "))}</span></div>`; }).join("");
+    return;
+  }
   const r = run(), s = step(), all = r.steps[r.steps.length - 1].moves, ports = all.filter(m => m.startsWith("port"));
   const rows = [];
   ports.forEach(m => rows.push({ m, k: 0, port: true }));
@@ -234,6 +256,125 @@ function moves() {
         <span class="tag ${x.port ? "port" : ""}">${kind}</span><span class="what">${esc(rest.join(": "))}</span>${gain}</button>`;
     }).map((h, j) => j === ports.length ? start + h : h).join("") + (rows.length === ports.length ? start : "");
 }
+
+// ---- Pareto map: worst path (x) against total (y), both lower is better ----
+const pm = $("pm"), pctx = pm.getContext("2d");
+const RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b", "#0a2a52"];
+let pts = [], PV = null;
+function points() {
+  // every placement the page knows, each with how it was reached
+  const b = R.base.line, out = [{ x: b.worst, y: b.total, kind: "start", label: "today's placement", moves: [], pick: null }];
+  for (const r of R.runs.filter(r => r.objective === state.objective)) r.steps.forEach((st, k) => {
+    const nb = st.moves.filter(m => m.startsWith("bank")).length, np = st.moves.length - nb;
+    out.push({ x: st.worst, y: st.total, kind: np && nb ? "both" : np ? "ports" : nb ? "mirrors" : "start",
+      label: `${np} port move${np === 1 ? "" : "s"}, then ${nb} bank move${nb === 1 ? "" : "s"}`, moves: st.moves, run: r, k, pick: { p: r.port_budget, k } });
+  });
+  if (R.orders) R.orders.front.forEach(f => out.push({ x: f.worst, y: f.total, kind: "front", label: `bus order ${f.order.join(" ")}`, moves: f.moves, pick: { front: f } }));
+  return out;
+}
+function drawPM() {
+  if (!R) return;
+  const dpr = devicePixelRatio || 1, W2 = pm.clientWidth, H2 = pm.clientHeight;
+  pm.width = Math.round(W2 * dpr); pm.height = Math.round(H2 * dpr); pctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const C = { bg: css("--panel"), line: css("--line"), faint: css("--faint"), muted: css("--muted"), ink: css("--ink"), sel: css("--sel"), path: css("--path") };
+  pctx.fillStyle = C.bg; pctx.fillRect(0, 0, W2, H2);
+  pts = points();
+  const rows = R.orders ? R.orders.rows : [];
+  const xs = pts.map(p => p.x).concat(rows.map(r => r[3])), ys = pts.map(p => p.y).concat(rows.map(r => r[4]));
+  const pad = (a, b) => (b - a) * 0.05;
+  let x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  x0 -= pad(x0, x1); x1 += pad(x0, x1); y0 -= pad(y0, y1); y1 += pad(y0, y1);
+  const L = 70, Rm = 64, T = 30, B = 44, w = W2 - L - Rm, h = H2 - T - B;
+  const X = v => L + (v - x0) / (x1 - x0) * w, Y = v => T + (1 - (v - y0) / (y1 - y0)) * h;
+  PV = { X, Y };
+  const base = R.base.line;
+  // axes: absolute below and left, gain against the start above and right
+  pctx.font = `11px ${css("--font-body")}`; pctx.fillStyle = C.muted; pctx.strokeStyle = C.line; pctx.lineWidth = 1;
+  const nice = (a, b) => { const r = (b - a) / 6, p = 10 ** Math.floor(Math.log10(r)); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= r); };
+  const sx_ = nice(x0, x1), sy_ = nice(y0, y1);
+  pctx.textAlign = "center"; pctx.textBaseline = "top";
+  for (let v = Math.ceil(x0 / sx_) * sx_; v <= x1; v += sx_) { pctx.beginPath(); pctx.moveTo(X(v), T); pctx.lineTo(X(v), T + h); pctx.stroke(); pctx.fillText(fmt(v), X(v), T + h + 6); }
+  pctx.textAlign = "right"; pctx.textBaseline = "middle";
+  for (let v = Math.ceil(y0 / sy_) * sy_; v <= y1; v += sy_) { pctx.beginPath(); pctx.moveTo(L, Y(v)); pctx.lineTo(L + w, Y(v)); pctx.stroke(); pctx.fillText(mm(v), L - 8, Y(v)); }
+  pctx.textAlign = "center"; pctx.textBaseline = "bottom"; pctx.fillText("worst path, µm", L + w / 2, H2 - 4);
+  pctx.save(); pctx.translate(16, T + h / 2); pctx.rotate(-Math.PI / 2); pctx.textBaseline = "middle"; pctx.fillText("total, mm", 0, 0); pctx.restore();
+  pctx.fillStyle = C.faint; pctx.textBaseline = "bottom";
+  for (const g of [0, 10, 20, 30, 40]) { const v = base.worst * (1 - g / 100); if (v >= x0 && v <= x1) pctx.fillText(g ? `−${g}%` : "start", X(v), T - 4); }
+  pctx.textAlign = "left"; pctx.textBaseline = "middle";
+  for (const g of [0, 10, 20, 30, 40]) { const v = base.total * (1 - g / 100); if (v >= y0 && v <= y1) pctx.fillText(g ? `−${g}%` : "start", L + w + 6, Y(v)); }
+  // every bus order, coloured by how many bus moves it takes
+  for (const r of rows) { pctx.fillStyle = RAMP[Math.min(r[1], RAMP.length - 1)]; pctx.globalAlpha = 0.55; pctx.fillRect(X(r[3]) - 1.5, Y(r[4]) - 1.5, 3, 3); }
+  pctx.globalAlpha = 1;
+  // the front over everything, as a staircase
+  const all = pts.map(p => [p.x, p.y]).concat(rows.map(r => [r[3], r[4]])).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const front = []; let bt = Infinity; for (const q of all) if (q[1] < bt - 1e-6) { front.push(q); bt = q[1]; }
+  pctx.strokeStyle = C.path; pctx.lineWidth = 2; pctx.setLineDash([6, 4]); pctx.beginPath();
+  front.forEach((q, i) => { if (i) pctx.lineTo(X(q[0]), Y(front[i - 1][1])); i ? pctx.lineTo(X(q[0]), Y(q[1])) : pctx.moveTo(X(q[0]), Y(q[1])); });
+  pctx.lineTo(L + w, Y(front[front.length - 1][1])); pctx.stroke(); pctx.setLineDash([]);
+  // each search: start, then the port moves, then one bank move at a time
+  const KIND = { start: C.ink, ports: C.sel, mirrors: css("--bank-hi"), both: C.path, front: C.path };
+  for (const r of R.runs.filter(r => r.objective === state.objective)) {
+    const seq = [[base.worst, base.total]].concat(r.steps.map(st => [st.worst, st.total]));
+    pctx.strokeStyle = C.muted; pctx.lineWidth = 1.2; pctx.beginPath(); seq.forEach((q, i) => i ? pctx.lineTo(X(q[0]), Y(q[1])) : pctx.moveTo(X(q[0]), Y(q[1]))); pctx.stroke();
+    // name each search where its port moves land; a search with none, at its last mirror
+    const at = r.port_budget ? seq[1] : seq[seq.length - 1];
+    const text = r.port_budget ? `after ${r.port_budget} port move${r.port_budget === 1 ? "" : "s"}` : "mirrors only";
+    pctx.font = `11px ${css("--font-body")}`; pctx.textAlign = "left"; pctx.textBaseline = "top";
+    pctx.lineWidth = 3; pctx.strokeStyle = C.bg; pctx.strokeText(text, X(at[0]) + 8, Y(at[1]) + 6);
+    pctx.fillStyle = C.muted; pctx.fillText(text, X(at[0]) + 8, Y(at[1]) + 6);
+  }
+  const cur = step();
+  for (const p of pts) {
+    const n = p.moves.length, rad = p.kind === "start" ? 6 : 3 + Math.min(5, Math.sqrt(n) * 1.1);
+    pctx.beginPath(); pctx.arc(X(p.x), Y(p.y), rad, 0, Math.PI * 2);
+    if (p.kind === "front") { pctx.fillStyle = C.bg; pctx.fill(); pctx.strokeStyle = C.path; pctx.lineWidth = 2.5; pctx.stroke(); }
+    else { pctx.fillStyle = KIND[p.kind]; pctx.fill(); pctx.strokeStyle = C.bg; pctx.lineWidth = 1.5; pctx.stroke(); }
+    const on = p.pick && (p.pick.front ? state.custom === p.pick.front : !state.custom && p.pick.p === state.ports && p.pick.k === Math.min(state.k, p.run.steps.length - 1));
+    if (on || (p.kind === "start" && false)) { pctx.beginPath(); pctx.arc(X(p.x), Y(p.y), rad + 5, 0, Math.PI * 2); pctx.strokeStyle = C.ink; pctx.lineWidth = 1.8; pctx.stroke(); }
+  }
+  // name the start and the best on each score
+  const label = (p, text, dx, dy) => { pctx.font = `600 11.5px ${css("--font-body")}`; pctx.textAlign = dx < 0 ? "right" : "left"; pctx.textBaseline = "middle";
+    pctx.lineWidth = 4; pctx.strokeStyle = C.bg; pctx.strokeText(text, X(p.x) + dx, Y(p.y) + dy); pctx.fillStyle = C.ink; pctx.fillText(text, X(p.x) + dx, Y(p.y) + dy); };
+  label(pts[0], "today", -10, 0);
+  const byW = pts.reduce((a, b) => (b.x < a.x || (b.x === a.x && b.y < a.y)) ? b : a), byT = pts.reduce((a, b) => (b.y < a.y || (b.y === a.y && b.x < a.x)) ? b : a);
+  label(byW, `best worst path ${pct(byW.x, base.worst)}`, -12, -14);
+  if (byT !== byW) label(byT, `best total ${pct(byT.y, base.total)}`, 14, 14);
+  $("plegend").innerHTML = `
+    <span><i class="dot" style="background:var(--ink)"></i>today</span>
+    <span><i class="dot" style="background:var(--sel)"></i>port moves only</span>
+    <span><i class="dot" style="background:var(--bank-hi)"></i>mirrors only</span>
+    <span><i class="dot" style="background:var(--path)"></i>port moves and mirrors</span>
+    <span><i class="dot" style="border:2px solid var(--path);background:var(--panel)"></i>best bus order on the front</span>
+    <span><i class="ln" style="border-color:var(--muted)"></i>a search, move by move</span>
+    <span><i class="ln" style="border-color:var(--path);border-top-style:dashed"></i>the front</span>
+    ${rows.length ? `<span><i class="seqramp"></i>all ${fmt(rows.length)} bus orders, by bus moves 0 to ${Math.max(...rows.map(r => r[1]))}</span>` : ""}
+    <span>bigger point: more moves</span>`;
+}
+function nearestPM(e) {
+  const r = pm.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+  let best = null, bd = 9;
+  for (const p of pts) { const d = Math.hypot(PV.X(p.x) - mx, PV.Y(p.y) - my); if (d < bd) { bd = d; best = { p }; } }
+  if (best || !R.orders) return best;
+  bd = 5;
+  for (const row of R.orders.rows) { const d = Math.hypot(PV.X(row[3]) - mx, PV.Y(row[4]) - my); if (d < bd) { bd = d; best = { row }; } }
+  return best;
+}
+pm.addEventListener("pointermove", e => {
+  if (!R) return; const h = nearestPM(e); if (!h) return tip.hidden = true;
+  const b = R.base.line;
+  if (h.row) { const [code, nbus, nmir, w, t] = h.row, order = [...code].map(c => R.orders.buses[+c]);
+    return showTip(e, `bus order <b>${esc(order.join(" "))}</b><br>${nbus} bus moves, ${nmir} banks mirrored<br>worst ${fmt(w)} µm (${pct(w, b.worst)}), total ${mm(t)} mm (${pct(t, b.total)})`); }
+  const p = h.p, ports = p.moves.filter(m => m.startsWith("port")), banks = p.moves.length - ports.length;
+  showTip(e, `<b>${esc(p.label)}</b><br>worst ${fmt(p.x)} µm (${pct(p.x, b.worst)}), total ${mm(p.y)} mm (${pct(p.y, b.total)})` +
+    (ports.length ? `<br>${ports.map(m => esc(m.replace("port: ", ""))).join("<br>")}` : "") + (banks ? `<br>${banks} bank move${banks === 1 ? "" : "s"} (mirrors)` : "") +
+    (p.pick ? `<br><span style="color:var(--muted)">click to show it below</span>` : ""));
+});
+pm.addEventListener("pointerleave", () => tip.hidden = true);
+pm.addEventListener("click", e => {
+  if (!R) return; const h = nearestPM(e); if (!h || !h.p || !h.p.pick) return;
+  if (h.p.pick.front) state.custom = h.p.pick.front; else { state.custom = null; state.ports = h.p.pick.p; state.k = h.p.pick.k; }
+  render();
+});
 
 // ---- floorplan ----
 const cv = $("fp"), ctx = cv.getContext("2d");

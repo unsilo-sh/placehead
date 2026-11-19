@@ -91,7 +91,9 @@ python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o
 between the bank groups: `--keepout 1044.5,0,1405,2200`.
 The published results keep the bank array where it is: the aisle is kept for logic, and no bank may
 move above the array or down toward the pins. Bank moves are then mirrors in place:
-`--k 48 --keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200 --keepout 0,0,2450,80`.
+`--k 48 --orders --keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200 --keepout 0,0,2450,80`.
+`--orders` also scores every bus order (8! = 40,320), each bank mirrored in place its best way, and
+keeps the orders on the front. The results page plots them all on its Pareto map.
 
 `--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
 Manhattan score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
