@@ -138,7 +138,7 @@ svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
         </div>
       </div>
       <canvas id="fp"></canvas>
-      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it, then click one of its wires to follow every path through it. Hover over a corner to name its cell. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
+      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it, then click one of its wires to follow every path through it. Hover over a corner to name its cell. A selected path marks its pins; zoom in to read the cell pins' names. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
     </section>
 
     <div class="side">
@@ -394,6 +394,28 @@ function drawFP() {
       for (const n of P.nodes) { if (!isComb(n)) continue; const [x, y] = center(n);
         ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.fillStyle = css("--panel"); ctx.fill();
         ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.stroke(); }
+      // Pins: each end of a path wire or other input. Top-level pins always named; cell pins named when zoomed in.
+      const pins = new Map();
+      for (const k of [...P.segs, ...side]) { const q = D.segs[k];
+        pins.set(SI[k][0] + "|" + SI[k][1], [SI[k][0], SI[k][1], q[0], q[1]]);
+        pins.set(SI[k][2] + "|" + SI[k][3], [SI[k][2], SI[k][3], q[2], q[3]]); }
+      const mono = css("--font-mono"), named = view.s >= 4;
+      ctx.textBaseline = "middle";
+      for (const [n, pin, x, y] of pins.values()) {
+        const X = sx(x), Y = sy(y);
+        if (n >= NI) {
+          ctx.fillStyle = C.port; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+          ctx.fillRect(X - 4.5, Y - 4.5, 9, 9); ctx.strokeRect(X - 4.5, Y - 4.5, 9, 9);
+          ctx.save(); ctx.translate(X, Y - 9); ctx.rotate(-Math.PI / 2);
+          ctx.font = `600 11px ${mono}`; ctx.textAlign = "left";
+          ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(pin, 0, 0); ctx.fillStyle = C.ink; ctx.fillText(pin, 0, 0);
+          ctx.restore();
+        } else {
+          ctx.beginPath(); ctx.arc(X, Y, 2.5, 0, Math.PI * 2); ctx.fillStyle = C.ink; ctx.fill();
+          if (named) { ctx.font = `10px ${mono}`; ctx.textAlign = "left";
+            ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(pin, X + 5, Y); ctx.fillStyle = C.ink; ctx.fillText(pin, X + 5, Y); }
+        }
+      }
     }
     for (const i of S.ends) { if (i >= NI || D.kinds[D.inst[i][1]] === "memory") continue;
       const [x, y] = center(i); ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.strokeStyle = C.sel; ctx.lineWidth = 1.5; ctx.stroke(); }
