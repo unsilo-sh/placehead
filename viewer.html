@@ -1,0 +1,725 @@
+<meta charset="utf-8">
+<title>Port Cone Viewer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: floorplan canvas across the full width, then the selection panel and pin list, then two linked charts. */
+:root {
+  --bg: #f4f6f8; --panel: #ffffff; --ink: #14181d; --muted: #59626d; --faint: #8a939d;
+  --line: #dde2e7; --die: #fbfcfd;
+  --comb: #b4bcc5; --flop: #2a78d6; --mem: #eb6834; --port: #1baf7a; --sel: #6250d6;
+  --win: #2a78d6; --wout: #1baf7a;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
+  --line: #2a3037; --die: #12161a;
+  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9;
+  --win: #3987e5; --wout: #199e70; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #0f1215; --panel: #171b1f; --ink: #e7eaed; --muted: #a0a9b3; --faint: #6f7882;
+  --line: #2a3037; --die: #12161a;
+  --comb: #4a535d; --flop: #3987e5; --mem: #d95926; --port: #199e70; --sel: #9085e9;
+  --win: #3987e5; --wout: #199e70; color-scheme: dark }
+
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); }
+.wrap { padding-block: 24px 40px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 20px; }
+header { display: grid; gap: 6px; max-width: 1320px; }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: 26px; margin: 0; text-wrap: balance; letter-spacing: 0.005em; }
+h1 code { font-family: var(--font-mono); font-weight: 500; font-size: 0.9em; }
+h2 { font-family: var(--font-display); font-weight: 600; font-size: 16px; margin: 0; }
+.sub { color: var(--muted); margin: 0; max-width: 72ch; line-height: 1.5; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 4px 0 0; padding: 0; list-style: none;
+  font-variant-numeric: tabular-nums; color: var(--muted); }
+.facts b { color: var(--ink); font-weight: 600; font-family: var(--font-mono); }
+.mono { font-family: var(--font-mono); }
+.loadbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 6px; }
+.loadbar .note { color: var(--muted); }
+.loadbar .note.err { color: var(--mem); }
+body.dragging { outline: 3px dashed var(--sel); outline-offset: -8px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); font-weight: 500; }
+
+#app { display: grid; gap: 20px; }
+#app[hidden] { display: none; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+
+.fp { position: relative; }
+.fp-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ln { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+.ln.dash { border-top-style: dashed; }
+.btns { margin-left: auto; display: flex; gap: 6px; }
+button { font: inherit; }
+.btn { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; }
+.btn:hover { border-color: var(--faint); }
+.btn[aria-pressed="false"] { color: var(--muted); border-style: dashed; }
+.btn:focus-visible, .row:focus-visible, input:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+#fp { display: block; width: 100%; height: 600px; max-width: 100%; cursor: crosshair; touch-action: none; }
+.hint { font-size: 12px; color: var(--faint); padding: 8px 12px; border-top: 1px solid var(--line); }
+
+.side { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 920px) { .side { grid-template-columns: minmax(0, 1fr); } }
+.sel { padding: 14px; display: grid; gap: 12px; }
+.sel-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.sel-name { font-family: var(--font-mono); font-size: 18px; font-weight: 500; }
+.chip { font-size: 11px; padding: 2px 7px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+.clear { margin-left: auto; }
+.stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.stat .v { font-family: var(--font-mono); font-size: 18px; font-variant-numeric: tabular-nums; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+td.n, th.n { text-align: right; }
+.tscroll { max-height: 220px; overflow: auto; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--mem); }
+.note { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin: 0; }
+
+.list { padding: 12px 0 0; display: grid; gap: 8px; }
+.list-head { display: flex; gap: 8px; align-items: center; padding: 0 12px; }
+#q { flex: 1; min-width: 0; font: inherit; font-size: 13px; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.rows { max-height: 360px; overflow: auto; border-top: 1px solid var(--line); }
+.bus { position: sticky; top: 0; background: var(--panel); padding: 6px 12px 4px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); z-index: 1; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) 30px 46px 46px 34px; gap: 6px; width: 100%; text-align: left;
+  padding: 4px 12px; border: 0; background: none; color: var(--ink); cursor: pointer; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.row:hover { background: var(--bg); }
+.row[aria-pressed="true"] { background: color-mix(in srgb, var(--sel) 14%, transparent); }
+.row .n { text-align: right; color: var(--muted); }
+.row-h { cursor: default; color: var(--faint); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.row-h:hover { background: none; }
+
+.charts { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 920px) { .charts { grid-template-columns: minmax(0, 1fr); } }
+.chart { padding: 14px; display: grid; gap: 8px; align-content: start; }
+.chart .sub { font-size: 12.5px; }
+.svgbox { overflow-x: auto; }
+svg text { fill: var(--muted); font-family: var(--font-body); font-size: 11px; }
+svg .axis { stroke: var(--line); }
+svg .grid { stroke: var(--line); stroke-dasharray: 2 3; }
+.cellr { cursor: pointer; }
+.dot { cursor: pointer; }
+
+#tip { position: fixed; pointer-events: none; z-index: 20; background: var(--panel); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; font-size: 12px; line-height: 1.45; box-shadow: 0 4px 14px rgb(0 0 0 / 0.15); max-width: 280px; }
+#tip b { font-family: var(--font-mono); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Port cones on <code id="dname"></code></h1>
+    <p class="sub">def2graph traces each top-level pin through plain logic until it reaches a flop or a memory. This page draws those cones on the placement. Select a pin to see its cone and endpoints. Select a memory bank to see which pins reach it.</p>
+    <ul class="facts" id="facts"></ul>
+    <div class="loadbar">
+      <span class="label">Graph</span>
+      <span id="src" class="mono">loading graph.json…</span>
+      <button class="btn" id="openBtn" type="button">Open graph file…</button>
+      <input type="file" id="file" accept=".json,application/json" hidden>
+      <span id="loadmsg" class="note"></span>
+    </div>
+  </header>
+
+  <div id="app" hidden>
+  <div class="main">
+    <section class="card fp" aria-label="Floorplan">
+      <div class="fp-bar">
+        <div class="legend">
+          <span><i class="sw" style="background:var(--mem)"></i>memory</span>
+          <span><i class="sw" style="background:var(--flop)"></i>flop</span>
+          <span><i class="sw" style="background:var(--comb)"></i>logic gate</span>
+          <span><i class="sw" style="background:var(--port)"></i>top-level pin</span>
+          <span><i class="ln" style="border-color:var(--sel)"></i>pin's cone</span>
+          <span><i class="ln" style="border-color:var(--win)"></i>into bank</span>
+          <span><i class="ln" style="border-color:var(--wout)"></i>out of bank</span>
+          <span><i class="ln dash" style="border-color:var(--faint)"></i>outside every cone</span>
+          <span><i class="ln" style="border-color:var(--muted);border-top-width:1px"></i>other input to a path's gate</span>
+        </div>
+        <div class="btns">
+          <span id="toggles" class="btns" style="margin-left:0"></span>
+          <button class="btn" id="zPins" type="button">Zoom to pins</button>
+          <button class="btn" id="zCells" type="button">Fit cells</button>
+          <button class="btn" id="zFit" type="button">Fit die</button>
+        </div>
+      </div>
+      <canvas id="fp"></canvas>
+      <div class="hint">Scroll to zoom. Drag to pan. Click a pin or a bank to select it, then click one of its wires to follow every path through it. Hover over a corner to name its cell. A selected path marks its pins; zoom in to read the cell pins' names. Each wire is a straight line from the pin that drives a net to a pin it feeds. The design is placed, not routed.</div>
+    </section>
+
+    <div class="side">
+      <section class="card sel" id="sel" aria-live="polite"></section>
+      <section class="card list" aria-label="Top-level pins">
+        <div class="list-head">
+          <h2>Top-level pins</h2>
+          <input id="q" type="search" placeholder="Filter, e.g. rdata_c" aria-label="Filter pins">
+        </div>
+        <div class="rows" id="rows"></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="charts">
+    <section class="card chart">
+      <h2>Which buses reach which banks</h2>
+      <p class="sub">Each cell counts the cone endpoints on that bank from the bus's pins. Hover over a cell to see the count when cells are too narrow to show it. A bus with an empty row reaches flops only. Click a cell to select the bank.</p>
+      <div class="svgbox" id="matrix"></div>
+    </section>
+    <section class="card chart">
+      <h2>Wire length against logic depth</h2>
+      <p class="sub">One dot per cone endpoint. Wire length is the sum of pin-to-pin Manhattan distances along the longest path from the top-level pin to the endpoint pin, through the cone's gates. With no routing, it is a lower bound. Depth is def2graph's count of cells on the path, the endpoint included. Click a dot to select its pin.</p>
+      <div class="svgbox" id="scatter"></div>
+    </section>
+  </div>
+</div>
+</div>
+<div id="tip" hidden></div>
+
+<script>
+// The viewer holds no design. It loads a graph JSON written by make_graph_json.py:
+// graph.json beside the page on load, or a file the viewer opens or drops here.
+const FORMAT = "placehead-graph/1";
+const NEEDS = ["design", "die", "kinds", "cells", "inst", "ports", "segs", "segInCone", "segBus", "segInfo", "cones", "banks", "summary"];
+let teardown = () => {};
+let opened = false;   // set once the viewer opens or drops a file; graph.json then yields to it
+
+function check(D) {
+  if (!D || typeof D !== "object") return "The file is not a JSON object.";
+  if (D.format !== FORMAT) return `The file's format is "${D.format ?? "missing"}". This viewer reads "${FORMAT}". Write it with make_graph_json.py.`;
+  const gone = NEEDS.filter(k => !(k in D));
+  return gone.length ? `The file has no ${gone.join(", ")}.` : null;
+}
+
+// Interactive elements are replaced by bare copies, which drop the previous design's listeners.
+function fresh(ids) { for (const id of ids) { const el = document.getElementById(id); el.replaceWith(el.cloneNode(false)); } }
+
+function load(D, source) {
+  const msg = document.getElementById("loadmsg"), err = check(D);
+  if (err) { msg.textContent = `Not loaded: ${err}`; msg.className = "note err"; return; }
+  teardown(); fresh(["fp", "toggles", "rows", "q", "matrix", "scatter"]);
+  document.getElementById("src").textContent = source;
+  msg.textContent = ""; msg.className = "note";
+  document.getElementById("app").hidden = false;
+  document.title = `${D.design} Port Cones`;
+  boot(D);
+}
+
+function readFile(f) {
+  opened = true;
+  const r = new FileReader();
+  r.onload = () => { let D; try { D = JSON.parse(r.result); } catch (e) { return load(null, f.name); } load(D, f.name); };
+  r.onerror = () => { const m = document.getElementById("loadmsg"); m.textContent = `Not loaded: the browser could not read ${f.name}.`; m.className = "note err"; };
+  r.readAsText(f);
+}
+document.getElementById("openBtn").onclick = () => document.getElementById("file").click();
+document.getElementById("file").onchange = e => { if (e.target.files[0]) readFile(e.target.files[0]); e.target.value = ""; };
+addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging"); });
+addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragging"); if (e.dataTransfer.files[0]) readFile(e.dataTransfer.files[0]); });
+
+fetch("graph.json")
+  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  .then(D => { if (!opened) load(D, "graph.json"); })
+  .catch(e => { if (opened) return; document.getElementById("src").textContent = "none";
+    const m = document.getElementById("loadmsg"); m.textContent = `No graph.json beside the page (${e.message}). Open a graph file, or drop one here.`; m.className = "note"; });
+
+function boot(D) {
+  const NI = D.inst.length;
+  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const busOf = n => n.split("[")[0];
+  const fmt = v => Math.round(v).toLocaleString();
+
+  // ---- derived data ----
+  const center = i => i < NI
+    ? [D.inst[i][2] + D.inst[i][4] / 2, D.inst[i][3] + D.inst[i][5] / 2]
+    : [D.ports[i - NI][2], D.ports[i - NI][3]];
+  const nameOf = i => i < NI ? D.inst[i][0] : D.ports[i - NI][0];
+  const portIdx = {}; D.ports.forEach((p, k) => portIdx[p[0]] = NI + k);
+  const instIdx = {}; D.inst.forEach((r, k) => instIdx[r[0]] = k);
+  const banks = D.inst.map((r, i) => i).filter(i => D.kinds[D.inst[i][1]] === "memory")
+    .sort((a, b) => parseInt(nameOf(a).replace(/\D/g, "")) - parseInt(nameOf(b).replace(/\D/g, "")));
+
+  const ends = [];   // one per (pin, endpoint)
+  for (const [pn, c] of Object.entries(D.cones)) {
+    for (const [i, pin, type, depth, len] of c.e) {
+      ends.push({ port: pn, i, pin: pin || "", type, depth, dist: len });
+    }
+  }
+  const buses = [...new Set(D.ports.map(p => busOf(p[0])))].sort();
+  const counts = { in: D.ports.filter(p => p[1] === "I").length, out: D.ports.filter(p => p[1] === "O").length };
+
+  $("dname").textContent = D.design;
+  const kc = k => D.inst.filter(r => D.kinds[r[1]] === k).length;
+  $("facts").innerHTML = [
+    [fmt(NI), "cells"], [kc("memory"), "memory banks"], [kc("flop"), "flops"],
+    [D.ports.length, `top-level pins (${counts.in} in, ${counts.out} out)`],
+    [fmt(D.summary.memory_endpoints), "memory endpoints"], [fmt(D.summary.flop_endpoints), "flop endpoints"],
+    [`${D.die[2] - D.die[0]} × ${D.die[3] - D.die[1]}`, "µm die"],
+  ].map(([v, l]) => `<li><b>${v}</b> ${l}</li>`).join("");
+
+  // ---- selection ----
+  let sel = null;   // {kind: "port", name} | {kind: "bank", i}
+  function select(s) { sel = s; drawFP(); renderSel(); renderRows(); drawMatrix(); drawScatter(); }
+
+  // ---- floorplan canvas ----
+  const cv = $("fp"), ctx = cv.getContext("2d");
+  let view = { s: 1, ox: 0, oy: 0 }, W = 0, H = 0;
+  const dieW = D.die[2] - D.die[0], dieH = D.die[3] - D.die[1];
+  // The placed content: every cell and top-level pin. The view opens fitted to it.
+  const BOX = (() => { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const r of D.inst) { x0 = Math.min(x0, r[2]); y0 = Math.min(y0, r[3]); x1 = Math.max(x1, r[2] + r[4]); y1 = Math.max(y1, r[3] + r[5]); }
+    for (const p of D.ports) { x0 = Math.min(x0, p[2]); y0 = Math.min(y0, p[3]); x1 = Math.max(x1, p[2]); y1 = Math.max(y1, p[3]); }
+    return [x0, y0, x1, y1]; })();
+  const fitCells = () => fitBox(...BOX, 0.03);
+  const sx = x => view.ox + (x - D.die[0]) * view.s;
+  const sy = y => view.oy + (D.die[3] - y) * view.s;
+  const wx = X => (X - view.ox) / view.s + D.die[0];
+  const wy = Y => D.die[3] - (Y - view.oy) / view.s;
+
+  function resize() {
+    // Height follows the placed content's aspect ratio, up to 85% of the window.
+    const want = Math.round(Math.max(320, Math.min(cv.clientWidth * ((BOX[3] - BOX[1]) / (BOX[2] - BOX[0])) * 1.08, innerHeight * 0.85)));
+    if (Math.abs(cv.clientHeight - want) > 1) cv.style.height = want + "px";
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    const first = !W; W = r.width; H = r.height;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (first) fitCells();
+    drawFP();
+  }
+  function fitBox(x0, y0, x1, y1, pad) {
+    const w = (x1 - x0) * (1 + 2 * pad), h = (y1 - y0) * (1 + 2 * pad);
+    view.s = Math.min(W / w, H / h);
+    view.ox = W / 2 - ((x0 + x1) / 2 - D.die[0]) * view.s;
+    view.oy = H / 2 - (D.die[3] - (y0 + y1) / 2) * view.s;
+    drawFP();
+  }
+  function zoomPins() {
+    const pts = D.ports.map(p => [p[2], p[3]]).concat(D.inst.filter(r => D.kinds[r[1]] === "flop").map(r => [r[2], r[3]]));
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    fitBox(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys), 0.12);
+  }
+
+  // Wire classes a button hides. Hiding changes only what is drawn and clickable.
+  // A non-bus wire carries no single bit of a bus (segBus, from make_graph_html.py): clock, enables, decoded selects.
+  // A wire outside cones (drawn dashed) is in no def2graph cone. In sparse_mem_core these are the address and write-data flops' wires into the banks.
+  const TOGGLES = [
+    { label: "Non-bus wires", test: k => !D.segBus[k], on: true },
+    { label: "Wires outside cones", test: k => !D.segInCone[k], on: true },
+  ];
+  const hidden = k => TOGGLES.some(t => !t.on && t.test(k));
+  const vis = ks => TOGGLES.every(t => t.on) ? ks : ks.filter(k => !hidden(k));
+  function selection() {
+    const S = selection0();
+    if (S) S.groups = S.groups.map(([t, ks]) => [t, vis(ks)]);
+    return S;
+  }
+  function selection0() {
+    if (!sel) return null;
+    if (sel.kind === "port") {
+      const c = D.cones[sel.name];
+      return { members: new Set(c.m.concat([portIdx[sel.name]])), groups: [["--sel", c.s]], ends: c.e.map(e => e[0]), focus: portIdx[sel.name] };
+    }
+    const b = D.banks[nameOf(sel.i)];
+    return { members: new Set([sel.i]), groups: [["--win", b.in], ["--wout", b.out]], ends: [sel.i], focus: sel.i };
+  }
+
+  // ---- paths through one wire ----
+  const SI = D.segInfo;   // [driver node, driver pin, sink node, sink pin, net, length]
+  const isComb = n => n < NI && D.kinds[D.inst[n][1]] === "comb";
+  const FANIN = new Map(); SI.forEach((q, j) => { if (!FANIN.has(q[2])) FANIN.set(q[2], []); FANIN.get(q[2]).push(j); });
+  function pathThrough(k, ks) {
+    const byDrv = new Map(), bySnk = new Map();
+    for (const j of ks) {
+      if (!byDrv.has(SI[j][0])) byDrv.set(SI[j][0], []); byDrv.get(SI[j][0]).push(j);
+      if (!bySnk.has(SI[j][2])) bySnk.set(SI[j][2], []); bySnk.get(SI[j][2]).push(j);
+    }
+    // Wires upstream of a gate feed its inputs; wires downstream leave its outputs. Flops, banks and pins end a path.
+    const up = new Map(), dn = new Map();
+    const upLen = n => { if (up.has(n)) return up.get(n); up.set(n, 0);
+      const v = isComb(n) ? Math.max(0, ...(bySnk.get(n) || []).map(j => upLen(SI[j][0]) + SI[j][5])) : 0; up.set(n, v); return v; };
+    const dnLen = n => { if (dn.has(n)) return dn.get(n); dn.set(n, 0);
+      const v = isComb(n) ? Math.max(0, ...(byDrv.get(n) || []).map(j => SI[j][5] + dnLen(SI[j][2]))) : 0; dn.set(n, v); return v; };
+    const segs = new Set([k]), stack = [[SI[k][0], -1], [SI[k][2], 1]], seen = new Set();
+    while (stack.length) {
+      const [n, dir] = stack.pop(), key = n * 2 + (dir > 0);
+      if (seen.has(key) || !isComb(n)) continue; seen.add(key);
+      for (const j of (dir < 0 ? bySnk : byDrv).get(n) || []) { segs.add(j); stack.push([SI[j][dir < 0 ? 0 : 2], dir]); }
+    }
+    // Each node's longest wire length from a start of these paths, along these wires only.
+    const into = new Map(); for (const j of segs) { if (!into.has(SI[j][2])) into.set(SI[j][2], []); into.get(SI[j][2]).push(j); }
+    const at = new Map();
+    const from = n => { if (at.has(n)) return at.get(n); at.set(n, 0);
+      const v = Math.max(0, ...(into.get(n) || []).map(j => from(SI[j][0]) + SI[j][5])); at.set(n, v); return v; };
+    const nodes = new Set(); for (const j of segs) { nodes.add(SI[j][0]); nodes.add(SI[j][2]); }
+    const order = [...nodes].sort((a, b) => from(a) - from(b));
+    // Every other input of each gate on these paths, from anywhere in the design.
+    const side = [];
+    for (const n of order) if (isComb(n)) for (const j of FANIN.get(n) || []) if (!segs.has(j)) side.push(j);
+    return { k, segs, side, nodes: order, total: upLen(SI[k][0]) + SI[k][5] + dnLen(SI[k][2]), from };
+  }
+  const drawnSegs = S => S ? S.groups.flatMap(g => g[1]) : [];
+  function segDist(X, Y, k) {
+    const q = D.segs[k], ax = sx(q[0]), ay = sy(q[1]), bx = sx(q[2]), by = sy(q[3]);
+    const dx = bx - ax, dy = by - ay, L2 = dx * dx + dy * dy;
+    const t = L2 ? Math.max(0, Math.min(1, ((X - ax) * dx + (Y - ay) * dy) / L2)) : 0;
+    return Math.hypot(X - ax - t * dx, Y - ay - t * dy);
+  }
+  function hitSeg(X, Y, ks) { let best = null, bd = 5; for (const k of ks) { const d = segDist(X, Y, k); if (d < bd) { bd = d; best = k; } } return best; }
+  function hitCorner(X, Y, ks) {
+    let best = null, bd = 7;
+    for (const k of ks) for (const [e, n] of [[0, SI[k][0]], [1, SI[k][2]]]) {
+      const q = D.segs[k], d = Math.hypot(X - sx(q[e * 2]), Y - sy(q[e * 2 + 1])); if (d < bd) { bd = d; best = n; } }
+    return best;
+  }
+  function cornerTip(n, ks) {
+    const ins = new Set(), outs = new Set();
+    for (const k of ks) { if (SI[k][2] === n) ins.add(SI[k][3]); if (SI[k][0] === n) outs.add(SI[k][1]); }
+    const pins = [ins.size ? `in ${[...ins].slice(0, 4).map(esc).join(", ")}${ins.size > 4 ? ` +${ins.size - 4}` : ""}` : "",
+      outs.size ? `out ${[...outs].slice(0, 4).map(esc).join(", ")}${outs.size > 4 ? ` +${outs.size - 4}` : ""}` : ""].filter(Boolean).join(" · ");
+    return describe(n) + (pins ? `<br>pins on drawn wires: ${pins}` : "");
+  }
+  const segTip = k => { const q = SI[k];
+    return `wire on net <b>${esc(q[4])}</b><br>${esc(nameOf(q[0]))}.${esc(q[1])} → ${esc(nameOf(q[2]))}.${esc(q[3])}<br>${q[5].toFixed(1)} µm${D.segInCone[k] ? "" : ", outside every cone"}`; };
+
+  function drawFP() {
+    if (!W) return;
+    const C = { die: css("--die"), line: css("--faint"), comb: css("--comb"), flop: css("--flop"), mem: css("--mem"),
+      port: css("--port"), sel: css("--sel"), ink: css("--ink"), bg: css("--bg") };
+    ctx.fillStyle = C.bg; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = C.die; ctx.fillRect(sx(D.die[0]), sy(D.die[3]), dieW * view.s, dieH * view.s);
+    ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.strokeRect(sx(D.die[0]) + .5, sy(D.die[3]) + .5, dieW * view.s, dieH * view.s);
+    const S = selection();
+    const dim = i => S && !S.members.has(i);
+    const order = [0, 1, 2];
+    for (const k of order) {
+      const col = [C.comb, C.flop, C.mem][k];
+      for (let i = 0; i < NI; i++) {
+        const r = D.inst[i]; if (r[1] !== k) continue;
+        ctx.globalAlpha = dim(i) ? 0.22 : 1;
+        const x = sx(r[2]), y = sy(r[3] + r[5]), w = Math.max(r[4] * view.s, 1.5), h = Math.max(r[5] * view.s, 1.5);
+        ctx.fillStyle = col; ctx.fillRect(x, y, w, h);
+        if (k === 2) {
+          ctx.globalAlpha = dim(i) ? 0.4 : 1;
+          ctx.strokeStyle = S && S.ends.includes(i) ? C.sel : C.ink; ctx.lineWidth = S && S.ends.includes(i) ? 2.5 : 1;
+          ctx.strokeRect(x, y, w, h);
+          if (w > 34) { ctx.fillStyle = "#14181d"; ctx.font = `600 ${Math.min(12, w / 5)}px ${css("--font-mono")}`;
+            ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(r[0], x + w / 2, y + h / 2); }
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    for (let k = 0; k < D.ports.length; k++) {
+      const i = NI + k, p = D.ports[k]; const z = Math.max(3, Math.min(8, view.s * 1.2));
+      ctx.globalAlpha = dim(i) ? 0.25 : 1; ctx.fillStyle = C.port;
+      ctx.fillRect(sx(p[2]) - z / 2, sy(p[3]) - z / 2, z, z);
+    }
+    ctx.globalAlpha = 1;
+    if (S) {
+      const P = sel.path;
+      ctx.lineWidth = 1.4; ctx.globalAlpha = P ? 0.18 : 0.85;
+      for (const [tok, ks] of S.groups) for (const dashed of [0, 1]) {
+        ctx.strokeStyle = css(tok); ctx.setLineDash(dashed ? [5, 4] : []); ctx.beginPath();
+        for (const k of ks) { if (!D.segInCone[k] !== !!dashed) continue;
+          const q = D.segs[k]; ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); }
+        ctx.stroke();
+      }
+      ctx.setLineDash([]); ctx.globalAlpha = 1;
+      if (P) {
+        const side = vis(P.side);
+        ctx.strokeStyle = css("--muted"); ctx.lineWidth = 1.1; ctx.globalAlpha = 0.9;
+        for (const dashed of [0, 1]) { ctx.setLineDash(dashed ? [4, 3] : []); ctx.beginPath();
+          for (const k of side) { if (!D.segInCone[k] !== !!dashed) continue;
+            const q = D.segs[k]; ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); }
+          ctx.stroke(); }
+        ctx.setLineDash([]); ctx.fillStyle = css("--muted");
+        for (const k of side) { const q = D.segs[k]; ctx.fillRect(sx(q[0]) - 2.5, sy(q[1]) - 2.5, 5, 5); }
+        ctx.globalAlpha = 1;
+        const tok = (S.groups.find(g => g[1].includes(P.k)) || S.groups[0])[0];
+        ctx.strokeStyle = css(tok); ctx.lineWidth = 2.6;
+        for (const dashed of [0, 1]) { ctx.setLineDash(dashed ? [6, 4] : []); ctx.beginPath();
+          for (const k of P.segs) { if (!D.segInCone[k] !== !!dashed) continue;
+            const q = D.segs[k]; ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); }
+          ctx.stroke(); }
+        ctx.setLineDash([]);
+        const q = D.segs[P.k]; ctx.lineWidth = 4.5; ctx.beginPath(); ctx.moveTo(sx(q[0]), sy(q[1])); ctx.lineTo(sx(q[2]), sy(q[3])); ctx.stroke();
+        for (const n of P.nodes) { if (!isComb(n)) continue; const [x, y] = center(n);
+          ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.fillStyle = css("--panel"); ctx.fill();
+          ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5; ctx.stroke(); }
+        // Pins: each end of a path wire or other input. Top-level pins always named; cell pins named when zoomed in.
+        const pins = new Map();
+        for (const k of [...P.segs, ...side]) { const q = D.segs[k];
+          pins.set(SI[k][0] + "|" + SI[k][1], [SI[k][0], SI[k][1], q[0], q[1]]);
+          pins.set(SI[k][2] + "|" + SI[k][3], [SI[k][2], SI[k][3], q[2], q[3]]); }
+        const mono = css("--font-mono"), named = view.s >= 4;
+        ctx.textBaseline = "middle";
+        for (const [n, pin, x, y] of pins.values()) {
+          const X = sx(x), Y = sy(y);
+          if (n >= NI) {
+            ctx.fillStyle = C.port; ctx.strokeStyle = C.ink; ctx.lineWidth = 1.5;
+            ctx.fillRect(X - 4.5, Y - 4.5, 9, 9); ctx.strokeRect(X - 4.5, Y - 4.5, 9, 9);
+            ctx.save(); ctx.translate(X, Y - 9); ctx.rotate(-Math.PI / 2);
+            ctx.font = `600 11px ${mono}`; ctx.textAlign = "left";
+            ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(pin, 0, 0); ctx.fillStyle = C.ink; ctx.fillText(pin, 0, 0);
+            ctx.restore();
+          } else {
+            ctx.beginPath(); ctx.arc(X, Y, 2.5, 0, Math.PI * 2); ctx.fillStyle = C.ink; ctx.fill();
+            if (named) { ctx.font = `10px ${mono}`; ctx.textAlign = "left";
+              ctx.lineWidth = 3; ctx.strokeStyle = C.bg; ctx.strokeText(pin, X + 5, Y); ctx.fillStyle = C.ink; ctx.fillText(pin, X + 5, Y); }
+          }
+        }
+      }
+      for (const i of S.ends) { if (i >= NI || D.kinds[D.inst[i][1]] === "memory") continue;
+        const [x, y] = center(i); ctx.beginPath(); ctx.arc(sx(x), sy(y), 4, 0, Math.PI * 2); ctx.strokeStyle = C.sel; ctx.lineWidth = 1.5; ctx.stroke(); }
+      const [fx, fy] = center(S.focus);
+      if (S.focus >= NI) { ctx.beginPath(); ctx.arc(sx(fx), sy(fy), 7, 0, Math.PI * 2); ctx.strokeStyle = C.ink; ctx.lineWidth = 2; ctx.stroke(); }
+    }
+  }
+
+  function hitPort(X, Y) {
+    const x = wx(X), y = wy(Y), tol = 6 / view.s; let best = null, bd = Infinity;
+    for (let k = 0; k < D.ports.length; k++) { const d = Math.hypot(D.ports[k][2] - x, D.ports[k][3] - y); if (d < tol && d < bd) { bd = d; best = NI + k; } }
+    return best;
+  }
+  function hit(X, Y) {
+    const x = wx(X), y = wy(Y), tol = 6 / view.s;
+    let best = null, bd = Infinity;
+    for (let k = 0; k < D.ports.length; k++) {
+      const d = Math.hypot(D.ports[k][2] - x, D.ports[k][3] - y); if (d < tol && d < bd) { bd = d; best = NI + k; } }
+    if (best !== null) return best;
+    for (const i of banks) { const r = D.inst[i]; if (x >= r[2] && x <= r[2] + r[4] && y >= r[3] && y <= r[3] + r[5]) return i; }
+    for (let i = 0; i < NI; i++) { const [cx, cy] = center(i); const d = Math.hypot(cx - x, cy - y); if (d < tol && d < bd) { bd = d; best = i; } }
+    return best;
+  }
+
+  const tip = $("tip");
+  function showTip(e, html) { tip.innerHTML = html; tip.hidden = false;
+    const r = tip.getBoundingClientRect(); let x = e.clientX + 14, y = e.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = e.clientX - r.width - 14; if (y + r.height > innerHeight - 8) y = e.clientY - r.height - 14;
+    tip.style.left = x + "px"; tip.style.top = y + "px"; }
+  const hideTip = () => tip.hidden = true;
+
+  function describe(i) {
+    if (i >= NI) { const p = D.ports[i - NI], c = D.cones[p[0]];
+      return `<b>${esc(p[0])}</b> · ${p[1] === "I" ? "input" : "output"} pin<br>${c.m.length} cone nodes, depth ${c.depth}, ${c.e.length} endpoints`; }
+    const r = D.inst[i];
+    return `<b>${esc(r[0])}</b> · ${esc(D.cells[r[6]])}<br>${D.kinds[r[1]] === "comb" ? "logic gate" : D.kinds[r[1]]} at (${r[2].toFixed(1)}, ${r[3].toFixed(1)}) µm`;
+  }
+
+  let drag = null;
+  cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, ox: view.ox, oy: view.oy, moved: false }; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener("pointermove", e => {
+    const r = cv.getBoundingClientRect();
+    if (drag) { const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+      if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+      if (drag.moved) { view.ox = drag.ox + dx; view.oy = drag.oy + dy; drawFP(); hideTip(); return; } }
+    const X = e.clientX - r.left, Y = e.clientY - r.top, S = selection(), ks = sel && sel.path ? [...sel.path.segs, ...vis(sel.path.side)] : drawnSegs(S);
+    if (S) {
+      const p = hitPort(X, Y); if (p !== null) return showTip(e, describe(p));
+      const n = hitCorner(X, Y, ks); if (n !== null && n !== sel.i) return showTip(e, cornerTip(n, ks));
+      const k = hitSeg(X, Y, ks); if (k !== null) return showTip(e, segTip(k));
+    }
+    const i = hit(X, Y);
+    if (i === null) hideTip(); else showTip(e, describe(i));
+  });
+  cv.addEventListener("pointerup", e => {
+    const r = cv.getBoundingClientRect(), moved = drag && drag.moved; drag = null;
+    if (moved) return;
+    const X = e.clientX - r.left, Y = e.clientY - r.top, S = selection();
+    const p = hitPort(X, Y); if (p !== null) return select({ kind: "port", name: nameOf(p) });
+    if (S) { const ks = drawnSegs(S), k = hitSeg(X, Y, ks);
+      if (k !== null) { sel.path = pathThrough(k, ks); drawFP(); renderSel(); return; } }
+    const i = hit(X, Y);
+    if (i !== null && i < NI && D.kinds[D.inst[i][1]] === "memory") { if (!(sel && sel.i === i)) select({ kind: "bank", i }); return; }
+    if (sel && sel.path) { sel.path = null; drawFP(); renderSel(); return; }
+    if (i === null) select(null);
+  });
+  cv.addEventListener("pointerleave", hideTip);
+  cv.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = cv.getBoundingClientRect(), X = e.clientX - r.left, Y = e.clientY - r.top;
+    const x = wx(X), y = wy(Y), f = Math.exp(-e.deltaY * 0.0015);
+    view.s = Math.min(Math.max(view.s * f, 0.1), 200);
+    view.ox = X - (x - D.die[0]) * view.s; view.oy = Y - (D.die[3] - y) * view.s; drawFP();
+  }, { passive: false });
+  $("zFit").onclick = () => fitBox(D.die[0], D.die[1], D.die[2], D.die[3], 0.03);
+  $("zPins").onclick = zoomPins;
+  $("zCells").onclick = fitCells;
+  $("toggles").innerHTML = TOGGLES.map((t, j) =>
+    `<button class="btn" type="button" data-t="${j}" aria-pressed="true">${t.label}: shown</button>`).join("");
+  $("toggles").addEventListener("click", e => {
+    const b = e.target.closest("[data-t]"); if (!b) return;
+    const t = TOGGLES[+b.dataset.t]; t.on = !t.on;
+    b.setAttribute("aria-pressed", String(t.on)); b.textContent = `${t.label}: ${t.on ? "shown" : "hidden"}`;
+    if (sel && sel.path) { sel.path = hidden(sel.path.k) ? null : pathThrough(sel.path.k, drawnSegs(selection())); renderSel(); }
+    drawFP();
+  });
+
+  // ---- selection panel ----
+  function renderSel() {
+    const el = $("sel");
+    if (!sel) {
+      el.innerHTML = `<div class="label">Selection</div>
+        <p class="note">Nothing selected. Pick a pin in the list, on the floorplan, or in the charts below. Click a memory bank to see which pins reach it.</p>`;
+      return;
+    }
+    if (sel.kind === "port") {
+      const c = D.cones[sel.name], es = ends.filter(e => e.port === sel.name);
+      const by = t => es.filter(e => e.type === t);
+      const bankRows = {};
+      for (const e of by("memory")) { const b = nameOf(e.i); const r = bankRows[b] ||= { b, n: 0, dmin: 99, dist: 0 }; r.n++; r.dmin = Math.min(r.dmin, e.depth); r.dist = Math.max(r.dist, e.dist); }
+      const rows = Object.values(bankRows).sort((a, b) => a.dist - b.dist);
+      const flops = by("flop");
+      el.innerHTML = `<div class="sel-head"><span class="sel-name">${esc(sel.name)}</span>
+          <span class="chip">${c.d === "I" ? "input" : "output"} pin</span>
+          <button class="btn clear" type="button" id="clr">Clear</button></div>
+        <div class="stats">
+          <div class="stat"><div class="label">Cone cells</div><div class="v">${c.m.filter(i => i < NI).length}</div></div>
+          <div class="stat"><div class="label">Max depth</div><div class="v">${c.depth}</div></div>
+          <div class="stat"><div class="label">Endpoints</div><div class="v">${es.length}</div></div>
+        </div>
+        <p class="note">${by("memory").length} on memory, ${flops.length} on flops${by("port").length ? `, ${by("port").length} on other pins` : ""}.
+          ${flops.length ? `Flops reached: ${[...new Set(flops.map(e => nameOf(e.i)))].slice(0, 6).map(esc).join(", ")}${flops.length > 6 ? "…" : ""}.` : ""}</p>
+        ${rows.length ? `<div class="tscroll"><table><thead><tr><th>Bank</th><th class="n">Pins</th><th class="n">Min depth</th><th class="n">Wire µm</th></tr></thead>
+          <tbody>${rows.map(r => `<tr><td class="mono">${esc(r.b)}</td><td class="n">${r.n}</td><td class="n">${r.dmin}</td><td class="n">${fmt(r.dist)}</td></tr>`).join("")}</tbody></table></div>` : ""}`;
+    } else {
+      const name = nameOf(sel.i), b = D.banks[name], es = ends.filter(e => e.i === sel.i);
+      const ps = [...new Set(es.map(e => e.port))];
+      const perBus = {}; ps.forEach(p => perBus[busOf(p)] = (perBus[busOf(p)] || 0) + 1);
+      const pct = b.pins ? b.reached / b.pins : 0;
+      el.innerHTML = `<div class="sel-head"><span class="sel-name">${esc(name)}</span>
+          <span class="chip">${esc(D.cells[D.inst[sel.i][6]])}</span>
+          <button class="btn clear" type="button" id="clr">Clear</button></div>
+        <div class="stats">
+          <div class="stat"><div class="label">Pins reaching</div><div class="v">${ps.length}</div></div>
+          <div class="stat"><div class="label">Endpoints</div><div class="v">${es.length}</div></div>
+          <div class="stat"><div class="label">Depth</div><div class="v">${es.length ? Math.min(...es.map(e => e.depth)) + "–" + Math.max(...es.map(e => e.depth)) : "–"}</div></div>
+        </div>
+        <div style="display:grid;gap:6px"><div class="label">Bank pins inside any cone: ${b.reached} of ${b.pins}</div>
+          <div class="bar"><i style="width:${(pct * 100).toFixed(1)}%"></i></div></div>
+        <table><thead><tr><th>Pin group</th><th class="n">In a cone</th><th class="n">Signal pins</th></tr></thead>
+          <tbody>${Object.entries(b.groups).map(([g, [n, r]]) => `<tr><td class="mono">${esc(g)}</td><td class="n">${r}</td><td class="n">${n}</td></tr>`).join("")}</tbody></table>
+        <p class="note">${b.in.length} wires into the bank and ${b.out.length} out of it, traced back to a flop or a top-level pin and forward to the same. ${b.in.concat(b.out).filter(k => !D.segInCone[k]).length} of them are outside every def2graph cone (dashed).</p>
+        <p class="note">Top-level pins by bus: ${Object.entries(perBus).map(([k, v]) => `<span class="mono">${esc(k)}</span> ${v}`).join(", ") || "none"}.</p>`;
+    }
+    if (sel.path) {
+      const P = sel.path, gates = P.nodes.filter(isComb).length;
+      el.insertAdjacentHTML("beforeend", `<div style="display:grid;gap:8px;border-top:1px solid var(--line);padding-top:12px">
+        <div class="sel-head"><span class="label">Paths through the clicked wire</span><button class="btn clear" type="button" id="clrPath">Clear path</button></div>
+        <p class="note">${P.segs.size} wires and ${gates} logic gates. The longest route through the clicked wire is ${fmt(P.total)} µm of wire. The clicked wire is ${esc(nameOf(SI[P.k][0]))}.${esc(SI[P.k][1])} → ${esc(nameOf(SI[P.k][2]))}.${esc(SI[P.k][3])}.</p>
+        <p class="note">${P.side.length} other inputs feed these gates from off the paths (thin grey lines).</p>
+        <div class="tscroll" style="max-height:320px"><table><thead><tr><th>Cell or pin</th><th>Type</th><th class="n">Longest wire µm to here</th><th>Other inputs</th></tr></thead><tbody>
+        ${P.nodes.map(n => { const o = P.side.filter(j => SI[j][2] === n);
+          return `<tr><td class="mono">${esc(nameOf(n))}</td><td>${n >= NI ? "top-level pin" : esc(D.cells[D.inst[n][6]])}</td><td class="n">${fmt(P.from(n))}</td>
+            <td class="mono" style="font-size:11.5px">${o.map(j => `${esc(SI[j][3])} ← ${esc(nameOf(SI[j][0]))} <span style="color:var(--faint)">${fmt(SI[j][5])} µm</span>`).join("<br>")}</td></tr>`; }).join("")}
+        </tbody></table></div></div>`);
+      $("clrPath").onclick = () => { sel.path = null; drawFP(); renderSel(); };
+    }
+    $("clr").onclick = () => select(null);
+  }
+
+  // ---- pin list ----
+  function renderRows() {
+    const q = $("q").value.trim().toLowerCase(), box = $("rows"), top = box.scrollTop;
+    let html = `<div class="row row-h"><span>Pin</span><span>Dir</span><span class="n">Cells</span><span class="n">Ends</span><span class="n">Dep</span></div>`;
+    for (const bus of buses) {
+      const ps = D.ports.filter(p => busOf(p[0]) === bus && p[0].toLowerCase().includes(q))
+        .sort((a, b) => (parseInt(a[0].split("[")[1]) || 0) - (parseInt(b[0].split("[")[1]) || 0));
+      if (!ps.length) continue;
+      html += `<div class="bus"><span class="label">${esc(bus)}</span><span class="label">${ps.length}</span></div>`;
+      for (const p of ps) { const c = D.cones[p[0]];
+        html += `<button class="row" type="button" data-p="${esc(p[0])}" aria-pressed="${sel && sel.kind === "port" && sel.name === p[0]}">
+          <span class="mono">${esc(p[0])}</span><span class="n">${p[1] === "I" ? "in" : "out"}</span>
+          <span class="n">${c.m.filter(i => i < NI).length}</span><span class="n">${c.e.length}</span><span class="n">${c.depth}</span></button>`; }
+    }
+    box.innerHTML = html; box.scrollTop = top;
+  }
+  $("rows").addEventListener("click", e => { const b = e.target.closest("[data-p]"); if (b) select({ kind: "port", name: b.dataset.p }); });
+  $("q").addEventListener("input", renderRows);
+
+  // ---- bus × bank matrix ----
+  const RAMP = ["#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b"];
+  function drawMatrix() {
+    const M = {}; let max = 0;
+    for (const e of ends) if (e.type === "memory") { const k = busOf(e.port) + "|" + e.i;
+      const m = M[k] ||= { n: 0, dmin: 99, dmax: 0, dist: 0 }; m.n++; m.dmin = Math.min(m.dmin, e.depth); m.dmax = Math.max(m.dmax, e.depth); m.dist = Math.max(m.dist, e.dist); max = Math.max(max, m.n); }
+    const left = 76, topM = 34, ch = 26;
+    const cw = Math.max(12, Math.min(30, Math.floor(((($("matrix").clientWidth || 560) - left - 6) / banks.length))));
+    const showN = cw >= 20, every = cw >= 20 ? 1 : cw >= 14 ? 2 : 4;
+    const w = left + banks.length * cw + 4, h = topM + buses.length * ch + 4;
+    let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Endpoints per bus and bank">`;
+    banks.forEach((b, j) => { if (j % every === 0) s += `<text x="${left + j * cw + cw / 2}" y="${topM - 10}" text-anchor="middle">${nameOf(b).replace("bank", "")}</text>`; });
+    s += `<text x="${left}" y="11" style="font-size:10px">bank</text>`;
+    buses.forEach((bus, r) => {
+      const y = topM + r * ch;
+      s += `<text x="${left - 8}" y="${y + ch / 2 + 4}" text-anchor="end" style="font-family:var(--font-mono)">${esc(bus)}</text>`;
+      banks.forEach((b, j) => {
+        const m = M[bus + "|" + b], x = left + j * cw, on = sel && sel.kind === "bank" && sel.i === b;
+        if (!m) { s += `<rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="none" stroke="var(--line)"/>`; return; }
+        const step = Math.min(RAMP.length - 1, Math.floor((m.n / max) * (RAMP.length - 1) + 0.0001));
+        const fill = RAMP[Math.max(1, step)], ink = step >= 3 ? "#ffffff" : "#14181d";
+        s += `<g class="cellr" data-b="${b}" data-tip="<b>${esc(bus)}</b> → <b>${esc(nameOf(b))}</b><br>${m.n} endpoints, depth ${m.dmin}–${m.dmax}<br>longest wire path ${fmt(m.dist)} µm">
+          <rect x="${x + 1}" y="${y + 1}" width="${cw - 2}" height="${ch - 2}" rx="3" fill="${fill}" ${on ? 'stroke="var(--sel)" stroke-width="2.5"' : ""}/>
+          ${showN ? `<text x="${x + cw / 2}" y="${y + ch / 2 + 4}" text-anchor="middle" style="fill:${ink};font-size:10.5px;font-family:var(--font-mono)">${m.n}</text>` : ""}</g>`;
+      });
+    });
+    $("matrix").innerHTML = s + "</svg>";
+  }
+  $("matrix").addEventListener("mousemove", e => { const g = e.target.closest("[data-tip]"); g ? showTip(e, g.dataset.tip) : hideTip(); });
+  $("matrix").addEventListener("mouseleave", hideTip);
+  $("matrix").addEventListener("click", e => { const g = e.target.closest("[data-b]"); if (g) select({ kind: "bank", i: +g.dataset.b }); });
+
+  // ---- distance × depth scatter ----
+  function nice(v) { const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(m => m * p).find(m => m >= v / 5) || p * 10; }
+  function drawScatter() {
+    const box = $("scatter"), w = Math.max(320, Math.min(620, box.clientWidth || 560)), h = 300;
+    const L = 44, R = 12, T = 12, B = 40, pw = w - L - R, ph = h - T - B;
+    const xmax = Math.max(...ends.map(e => e.dist)) * 1.04, ymax = Math.max(...ends.map(e => e.depth)) + 1;
+    const X = v => L + (v / xmax) * pw, Y = v => T + ph - (v / ymax) * ph;
+    const step = nice(xmax);
+    let s = `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" role="img" aria-label="Distance against depth per endpoint">`;
+    for (let v = 0; v <= xmax; v += step) s += `<line class="grid" x1="${X(v)}" x2="${X(v)}" y1="${T}" y2="${T + ph}"/><text x="${X(v)}" y="${T + ph + 16}" text-anchor="middle">${v}</text>`;
+    for (let v = 0; v <= ymax; v += 2) s += `<line class="grid" x1="${L}" x2="${L + pw}" y1="${Y(v)}" y2="${Y(v)}"/><text x="${L - 8}" y="${Y(v) + 4}" text-anchor="end">${v}</text>`;
+    s += `<line class="axis" x1="${L}" x2="${L + pw}" y1="${T + ph}" y2="${T + ph}"/>`;
+    s += `<text x="${L + pw / 2}" y="${h - 6}" text-anchor="middle">wire length along the path, µm</text>`;
+    s += `<text transform="translate(12 ${T + ph / 2}) rotate(-90)" text-anchor="middle">logic depth</text>`;
+    const selName = sel && sel.kind === "port" ? sel.name : null, selBank = sel && sel.kind === "bank" ? sel.i : null;
+    const on = e => (selName && e.port === selName) || (selBank !== null && e.i === selBank);
+    const pts = [...ends].sort((a, b) => on(a) - on(b));
+    for (const e of pts) {
+      const lit = on(e), faded = sel && !lit;
+      const jit = ((e.i * 7919 + e.port.length * 104729 + e.pin.length * 31) % 100 / 100 - 0.5) * 0.35;
+      s += `<circle class="dot" cx="${X(e.dist).toFixed(1)}" cy="${Y(e.depth + jit).toFixed(1)}" r="${lit ? 5 : 4}"
+        fill="var(${e.type === "memory" ? "--mem" : e.type === "flop" ? "--flop" : "--port"})" stroke="var(--panel)" stroke-width="1.5"
+        opacity="${faded ? 0.15 : 0.85}" data-p="${esc(e.port)}"
+        data-tip="<b>${esc(e.port)}</b> → <b>${esc(nameOf(e.i))}</b>${e.pin ? "." + esc(e.pin) : ""}<br>${e.type === "port" ? "top-level pin" : e.type}, depth ${e.depth}, ${fmt(e.dist)} µm"/>`;
+    }
+    s += `<g transform="translate(${L + pw - 214} ${T + 4})"><rect width="214" height="22" rx="4" fill="var(--panel)" opacity="0.9"/>
+      <circle cx="12" cy="11" r="4" fill="var(--mem)"/><text x="20" y="15">memory</text>
+      <circle cx="82" cy="11" r="4" fill="var(--flop)"/><text x="90" y="15">flop</text>
+      <circle cx="132" cy="11" r="4" fill="var(--port)"/><text x="140" y="15">other pin</text></g>`;
+    box.innerHTML = s + "</svg>";
+  }
+  $("scatter").addEventListener("mousemove", e => { const g = e.target.closest("[data-tip]"); g ? showTip(e, g.dataset.tip) : hideTip(); });
+  $("scatter").addEventListener("mouseleave", hideTip);
+  $("scatter").addEventListener("click", e => { const g = e.target.closest("[data-p]"); if (g) select({ kind: "port", name: g.dataset.p }); });
+
+  // ---- boot ----
+  const ro = new ResizeObserver(() => { resize(); drawScatter(); drawMatrix(); }); ro.observe(cv);
+  const mq = matchMedia("(prefers-color-scheme: dark)"); mq.addEventListener("change", drawFP);
+  const mo = new MutationObserver(drawFP); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  teardown = () => { ro.disconnect(); mq.removeEventListener("change", drawFP); mo.disconnect(); };
+  document.fonts && document.fonts.ready.then(drawFP);
+  select(null);
+}
+</script>

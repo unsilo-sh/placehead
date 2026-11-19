@@ -27,7 +27,8 @@ and the inter-bank gaps; the 115 I/O pins sit on the bottom edge.
 | `sparse_mem_core_placed.def` | The placed DEF — ready-to-use def2graph input |
 | `placement.png` | Floorplan figure above, drawn by `plot_placement.py` from def2graph's output |
 | `plot_placement.py` | Draws the placement from def2graph's `nodes.parquet` and the DEF's `DIEAREA` |
-| `make_graph_html.py`, `graph_template.html` | Build `graph.html`: def2graph's cones and every bank's wires on the placement, with pin positions from the LEF |
+| `make_graph_json.py` | Writes a graph JSON (format `placehead-graph/1`): def2graph's cones and every bank's wires on the placement, with pin positions from the LEF |
+| `viewer.html` | The viewer. It holds no design: it loads `graph.json` beside it, or a graph JSON you open or drop on it |
 | `fetch_pdk.sh` | Downloads the Nangate45 and fakeram45 LEF and Liberty files into `pdk/` (not checked in) |
 
 ## Structure
@@ -57,10 +58,19 @@ PYTHONPATH=/path/to/factory/adapters/def2graph python3 -m def2graph \
   --def sparse_mem_core_placed.def --lef pdk/*.lef --lib pdk/*.lib \
   --out out/sparse_mem --formats parquet json
 python3 plot_placement.py --def sparse_mem_core_placed.def --graph out/sparse_mem -o placement.png
-python3 make_graph_html.py --def sparse_mem_core_placed.def --lef pdk/*.lef --graph out/sparse_mem -o graph.html
+python3 make_graph_json.py --def sparse_mem_core_placed.def --lef pdk/*.lef --graph out/sparse_mem -o out/sparse_mem_core.graph.json
 ```
 
 Expected: `fakeram45_1024x32` classified as **memory** (LEF `CLASS BLOCK` + Liberty
 `memory()`), **48/48 banks** detected as boundaries, and **1,968 memory endpoints**
 (input ports → `we_in`/`ce_in`/`clk`; output ports ← `rd_out`), each with its
 placement coordinate. Union graph ≈ 9.2k nodes / 13k edges.
+
+## View a graph
+
+`viewer.html` draws any graph JSON that `make_graph_json.py` writes. Open the viewer, then click
+**Open graph file…** or drop the JSON on the page. The file stays in your browser.
+
+On load, the viewer also looks for `graph.json` beside it. The published viewer has
+`out/sparse_mem_core.graph.json` there. A browser does not let a page opened from disk read
+files beside it, so open a local copy of `viewer.html` and load the JSON with the button.

@@ -1,8 +1,8 @@
-"""Build graph.html, an interactive view of def2graph's port cones on the placement.
+"""Write a graph JSON for viewer.html: def2graph's port cones on the placement.
 
 Usage:
-    python make_graph_html.py --def sparse_mem_core_placed.def --lef pdk/*.lef \
-        --graph out/sparse_mem -o graph.html
+    python make_graph_json.py --def sparse_mem_core_placed.def --lef pdk/*.lef \
+        --graph out/sparse_mem -o out/sparse_mem_core.graph.json
 
 def2graph decides what is in each cone (cones.json, nodes.parquet). This script
 adds geometry: each pin's position from its cell's LEF pin shape and the cell's
@@ -83,8 +83,7 @@ def main(argv=None):
     ap.add_argument("--def", dest="def_path", required=True)
     ap.add_argument("--lef", nargs="+", required=True)
     ap.add_argument("--graph", required=True, help="def2graph output directory")
-    ap.add_argument("-o", "--out", default="graph.html")
-    ap.add_argument("--template", default=str(Path(__file__).with_name("graph_template.html")))
+    ap.add_argument("-o", "--out", default="graph.json")
     args = ap.parse_args(argv)
     sys.setrecursionlimit(20000)
 
@@ -277,6 +276,7 @@ def main(argv=None):
                     "groups": dict(sorted(groups.items())), "in": sorted(seg_in), "out": sorted(seg_out)}
 
     data = {
+        "format": "placehead-graph/1",
         "design": summary["design"],
         "die": [um(v) for v in die],
         "kinds": KINDS,
@@ -299,11 +299,8 @@ def main(argv=None):
                     "nets": summary["graph_stats"]["signal_nets"]},
     }
     blob = json.dumps(data, separators=(",", ":"))
-    Path(args.out).with_name("graph_data.json").write_text(blob)
-    html = (Path(args.template).read_text().replace("/*__DATA__*/null", blob)
-            .replace("__DESIGN__", summary["design"]))
-    Path(args.out).write_text(html)
-    print(f"wrote {args.out} ({len(html) // 1024} KB), {len(segs)} wires")
+    Path(args.out).write_text(blob)
+    print(f"wrote {args.out} ({len(blob) // 1024} KB), {len(segs)} wires")
 
 
 if __name__ == "__main__":
