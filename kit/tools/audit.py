@@ -8,8 +8,10 @@ Checks:
   1 schema   the file has only the keys of the format, and its values have the types they should.
   2 strings  every string in the file is a token (oi12, ob3[7], ...) or a word of the format
              (common.SCHEMA_WORDS). Any other string FAILS, because it may be a real name.
+             Under "roles" only, a string may also be a role from the fixed list (common.ROLES).
   3 names    with --def/--lef/--lib: no name your design files define appears in the file,
              whole or inside a longer string. This check does not trust check 2 or the obfuscator.
+             Role words are skipped: they are from the fixed list, and the report lists them.
   4 files    nothing else sits beside the export: no key, no graph JSON, no design file.
 
 Then it lists what the export still shows: sizes, counts, geometry and connectivity.
@@ -24,8 +26,8 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-from common import (GRAPH_FORMAT, KEY_FORMAT, SCHEMA_WORDS, TOKEN, TOP_KEYS, design_names,
-                    load_json, strings)
+from common import (GRAPH_FORMAT, KEY_FORMAT, OPTIONAL_KEYS, ROLES, SCHEMA_WORDS, TOKEN, TOP_KEYS,
+                    design_names, load_json, strings)
 
 
 class Report:
@@ -51,7 +53,7 @@ def is_num(v):
 def schema_problems(g):
     """Wrong keys and wrong types, as (where, what) pairs. Names are not checked here."""
     bad = []
-    extra = set(g) - TOP_KEYS
+    extra = set(g) - TOP_KEYS - OPTIONAL_KEYS
     missing = TOP_KEYS - set(g)
     bad += [(f"$.{k}", "key not in the format") for k in sorted(extra)]
     bad += [(f"$.{k}", "key missing") for k in sorted(missing)]
@@ -85,6 +87,10 @@ def schema_problems(g):
             break
     if set(g["summary"]) != {"flop_endpoints", "memory_endpoints", "nets"}:
         bad.append(("$.summary", "summary keys not in the format"))
+    if "roles" in g:
+        buses = {p[0].split("[")[0] for p in g["ports"]}
+        if not isinstance(g["roles"], dict) or any(k not in buses or v not in ROLES for k, v in g["roles"].items()):
+            bad.append(("$.roles", "a role is not on the fixed list, or names a bus not in the file"))
     return bad
 
 
@@ -125,6 +131,8 @@ def residual(g, key, say):
     say("  - Connectivity: which cell drives which. With cell sizes and kinds, a reader can rebuild the"
         " gate-level structure of the cones, but not its names or logic functions.")
     say("  - Placement: the position of every exported cell, so the floorplan picture is visible.")
+    if g.get("roles"):
+        say(f"  - Roles (you chose to send these): " + ", ".join(f"{t} {r}" for t, r in g["roles"].items()) + ".")
     say("Not in the export: any name from the design, logic functions, timing, power, routing, layers,"
         " RTL, and the library and process names.")
 
@@ -170,7 +178,8 @@ def main(argv=None):
 
     # 2 strings
     all_strings = list(strings(g))
-    odd = [(p, s) for p, s in all_strings if s not in SCHEMA_WORDS and not TOKEN.match(s)]
+    is_role = lambda p, s: p == "$.roles.<token>" and s in ROLES
+    odd = [(p, s) for p, s in all_strings if s not in SCHEMA_WORDS and not TOKEN.match(s) and not is_role(p, s)]
     kinds = Counter(s[:2] for _, s in all_strings if TOKEN.match(s))
     R.check("2 strings", not odd,
             f"{len(all_strings)} strings: {sum(kinds.values())} tokens "
@@ -189,7 +198,7 @@ def main(argv=None):
         found = Counter()
         hits = []
         for p, s in all_strings:
-            if s in SCHEMA_WORDS:
+            if s in SCHEMA_WORDS or is_role(p, s):
                 continue
             # every piece of s, 3 characters or longer, looked up among the design's names
             for i in range(len(s)):

@@ -18,8 +18,8 @@ their questions about what the file holds. Their security team may ask these que
 
 These rules apply because anything you read or print in this session goes to the model provider.
 
-1. Do not read the design files (DEF, LEF, Liberty) or anything in `work/`, including `key.json`.
-   Run the tools on them and read only what the tools print.
+1. Do not read the design files (DEF, LEF, Liberty) or anything in `work/`, including `key.json`
+   and `roles.json`. Run the tools on them and read only what the tools print.
 2. You may read the export file and all of the kit's code. The export is the data that leaves the
    site, so reading it shows nothing new.
 3. Do not use `audit.py --show` unless the user asks for it. Before you use it, tell the user that
@@ -83,6 +83,16 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
    python3 $KIT/tools/obfuscate.py work/graph.json --key work/key.json -o export/design.export.json
    ```
 
+   If the user opts in to bus roles, write the roles file first. Then add `--roles` to the command:
+
+   ```bash
+   python3 $KIT/tools/obfuscate.py work/graph.json --roles-template work/roles.json
+   python3 $KIT/tools/obfuscate.py work/graph.json --roles work/roles.json --key work/key.json -o export/design.export.json
+   ```
+
+   The user fills in `work/roles.json`. It holds the real bus names, so do not read it unless the
+   user tells you to, and tell them that the bus names then enter this session.
+
 3. **Verify.** This shows that the analysis sees the same design:
 
    ```bash
@@ -115,7 +125,7 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
 
 ## Options
 
-Explain these choices to the user, and let them decide. Both defaults are terraine's choices, not
+Explain these choices to the user, and let them decide. The defaults are terraine's choices, not
 fixed rules.
 
 - `--profile headroom` (default) keeps only what the headroom analysis reads: the wires inside the
@@ -126,6 +136,10 @@ fixed rules.
   and cell heights. It gives limited protection: terraine's analysis uses spacing rules in um, so the
   user must tell terraine the factor, or terraine's results will be inexact. Ratios between sizes
   stay visible at any scale.
+- `--roles` (opt-in, off by default) sends a role for each bus the user chooses, from a fixed list:
+  clock, reset, address, write_data, read_data, write_enable, chip_enable, select, other. The
+  export holds the role, never the bus's real name. Roles make terraine's results easier to read.
+  The audit lists the roles that leave the site, and fails on any other word.
 
 ## Questions users ask
 

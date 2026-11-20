@@ -16,6 +16,10 @@ What changes:
             coordinate and length is also multiplied by one factor, kept in the key.
   profile   headroom (the default) keeps only what the headroom analysis reads: the wires inside
             the port cones, the cells on them, every memory and every port. full keeps every wire.
+  roles     opt-in, with --roles: each bus you list gets a role from a fixed list (common.ROLES),
+            such as read_data. The export holds the role, never the bus's real name.
+            --roles-template work/roles.json writes a file to fill in, then stops. It holds the
+            real bus names, so keep it in work/.
 
 What does not change: which cell connects to which, the kind of each cell (comb, flop, memory),
 cell sizes and positions relative to each other, and path lengths (times the scale).
@@ -30,20 +34,60 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-from common import GRAPH_FORMAT, KEY_FORMAT, load_json, split_bit
+from common import GRAPH_FORMAT, KEY_FORMAT, ROLES, load_json, split_bit
+
+
+def write_roles_template(g, path):
+    """One entry per bus: its direction, its width, and an empty role to fill in."""
+    buses = {}
+    for name, d, *_ in g["ports"]:
+        b = buses.setdefault(split_bit(name)[0], {"direction": d, "width": 0, "role": ""})
+        b["width"] += 1
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    Path(path).write_text(json.dumps({
+        "about": "Set each role to one of 'allowed', or leave it empty to send no role for that bus. "
+                 "This file holds real bus names: keep it on your side.",
+        "allowed": list(ROLES), "buses": dict(sorted(buses.items()))}, indent=1))
+    print(f"wrote {path}: {len(buses)} buses. Fill in the roles, then run with --roles {path}.")
+
+
+def read_roles(path, g):
+    """{real bus name: role} for the buses with a role. Stops on an unknown bus or role."""
+    buses = load_json(path).get("buses", {})
+    real = {split_bit(p[0])[0] for p in g["ports"]}
+    roles = {}
+    for bus, rec in buses.items():
+        role = rec.get("role", "") if isinstance(rec, dict) else rec
+        if not role:
+            continue
+        if bus not in real:
+            sys.exit(f"error: {path} names a bus that is not in the design")
+        if role not in ROLES:
+            sys.exit(f"error: {path} has a role that is not in the allowed list: {', '.join(ROLES)}")
+        roles[bus] = role
+    return roles
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("graph", help="graph JSON from extract.py (holds real names)")
-    ap.add_argument("--key", required=True, help="where to write the key (keep it; never send it)")
-    ap.add_argument("-o", "--out", required=True, help="the export file to write")
+    ap.add_argument("--roles-template", help="write a roles file to fill in, then stop")
+    ap.add_argument("--roles", help="opt-in: a filled-in roles file; the export carries each bus's role")
+    ap.add_argument("--key", help="where to write the key (keep it; never send it)")
+    ap.add_argument("-o", "--out", help="the export file to write")
     ap.add_argument("--profile", choices=["headroom", "full"], default="headroom")
     ap.add_argument("--scale", default="1", help="1 (default), random (0.5 to 2), or a factor")
     ap.add_argument("--seed", type=int, help="fixed shuffle, for tests only: anyone with the seed "
                                              "can undo the shuffle, not the names")
     args = ap.parse_args(argv)
 
+    if args.roles_template:
+        g = load_json(args.graph)
+        if g.get("format") != GRAPH_FORMAT:
+            sys.exit(f"error: {args.graph} is not a {GRAPH_FORMAT} file")
+        return write_roles_template(g, args.roles_template)
+    if not (args.key and args.out):
+        ap.error("--key and -o are required")
     out, key_path = Path(args.out).resolve(), Path(args.key).resolve()
     if key_path.parent == out.parent:
         sys.exit("error: write the key outside the export directory, so it is not sent by mistake")
@@ -178,6 +222,9 @@ def main(argv=None):
     data["summary"] = {"flop_endpoints": g["summary"]["flop_endpoints"],
                        "memory_endpoints": g["summary"]["memory_endpoints"],
                        "nets": len(nets) if args.profile == "headroom" else g["summary"]["nets"]}
+    roles = read_roles(args.roles, g) if args.roles else {}
+    if roles:
+        data["roles"] = dict(sorted((bus_tok[b], r) for b, r in roles.items()))
 
     blob = json.dumps(data, separators=(",", ":")).encode()
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -195,6 +242,7 @@ def main(argv=None):
         "cell": {f"oc{j}": cells[c] for j, c in enumerate(cell_order)},
         "pin": {t: [cells[c], p] for (c, p), t in pin_tok.items()},
         "net": {t: n for n, t in net_tok.items()},
+        "roles": data.get("roles", {}),
     }
     key_path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -205,6 +253,7 @@ def main(argv=None):
     print(f"  profile {args.profile}: {len(insts)} of {NI} instances, {len(segs)} of {nseg} wires, "
           f"{len(ports)} ports, {len(nets)} nets")
     print(f"  scale {'1 (lengths in um)' if scale == 1 else 'kept in the key'}")
+    print(f"  roles: {len(roles)} of {len(buses)} buses carry a role" if args.roles else "  roles: none sent")
     print(f"wrote key {key_path} (mode 600). Keep it. Do not send it.")
 
 

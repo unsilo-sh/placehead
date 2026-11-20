@@ -100,6 +100,10 @@ def main(argv=None):
         check(sorted(xseg[k] for k in b["in"]) == sorted(k for k in o["in"] if k in want), "memory wires in")
         check(sorted(xseg[k] for k in b["out"]) == sorted(k for k in o["out"] if k in want), "memory wires out")
 
+    # roles: only the ones the key recorded, each on a bus of the export
+    check(x.get("roles", {}) == key.get("roles", {}), "roles differ from the key's")
+    check(all(t in key["bus"] for t in x.get("roles", {})), "a role names a bus not in the key")
+
     print(f"compared {len(x['inst'])} instances, {len(x['ports'])} ports, {len(xseg)} wires, "
           f"{len(x['cones'])} cones, {len(x['banks'])} memories (profile {key['profile']}, scale {s:g})")
     if problems:

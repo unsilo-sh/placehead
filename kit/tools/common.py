@@ -25,12 +25,20 @@ SCHEMA_WORDS = {
     # cone, bank and summary keys
     "d", "m", "s", "e", "depth", "pins", "reached", "groups", "in", "out",
     "flop_endpoints", "memory_endpoints", "nets",
+    # the optional key for bus roles (its values are checked against ROLES, not here)
+    "roles",
     # values: cell kinds, endpoint types, port directions, and the empty pin of a port endpoint
     "comb", "flop", "memory", "port", "I", "O", "",
 }
 
 TOP_KEYS = {"format", "design", "die", "kinds", "cells", "inst", "ports", "segs", "segInCone",
             "segBus", "segInfo", "cones", "banks", "summary"}
+OPTIONAL_KEYS = {"roles"}
+
+# Opt-in: the role of a bus, from this fixed list only (terraine's list; ask to extend it).
+# The export holds the role in "roles", keyed by bus token, and never the bus's real name.
+ROLES = ("clock", "reset", "address", "write_data", "read_data", "write_enable", "chip_enable",
+         "select", "other")
 
 
 def split_bit(name):
@@ -75,6 +83,9 @@ def design_names(def_paths=(), lef_paths=(), lib_paths=()):
         name = name.strip('"').lstrip("\\")
         if name:
             found.setdefault(kind, set()).add(name)
+            base = split_bit(name)[0]       # addr[3] also names the bus addr
+            if base != name:
+                found.setdefault(kind + " bus", set()).add(base)
 
     for p in def_paths:
         section = None

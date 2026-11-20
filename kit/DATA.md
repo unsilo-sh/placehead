@@ -43,10 +43,23 @@ Units are um, times the scale if `--scale` was used. The die's lower-left corner
 | `cones` | per port token: direction, member cells, wires, endpoints (cell, pin, kind, depth, path length), depth | score each port's paths |
 | `banks` | per memory token: pin counts per pin group, and its input and output wires | score each memory's paths |
 | `summary` | counts: flop endpoints, memory endpoints, nets | show totals |
+| `roles` | opt-in only: per bus token, a role from the fixed list below | label buses in results |
 
 A "cone" starts at a port and follows logic cells until it reaches a flop or a memory. A wire is a
 straight line from the pin that drives a net to a pin the net feeds. The design is placed, not
 routed, so no routes are in the file.
+
+## Bus roles (opt-in)
+
+By default, the export gives no hint of what a bus does. With `--roles`, the owner gives each
+chosen bus one role from this list:
+
+`clock`, `reset`, `address`, `write_data`, `read_data`, `write_enable`, `chip_enable`, `select`,
+`other`
+
+The export then holds, for example, `"roles": {"ob3": "read_data"}`. The bus's real name stays in
+the key. The audit fails on any role that is not on the list, and lists the roles it found. The
+roles file that the owner fills in holds the real bus names, so it stays in `work/`.
 
 ## Profiles
 
@@ -64,6 +77,7 @@ design's numbers:
 - the sizes of the memories and cells (at scale 1, a reader can match a row height to a known
   library or process)
 - the ports: how many, their bus widths, their directions, and their order along each edge
+- with `--roles`: the role of each bus the owner chose
 - the placement of each exported cell, so the floorplan is visible
 - the connectivity: which cell drives which. A reader can rebuild the gate-level structure of the
   cones, but not the names or the logic functions.
@@ -85,6 +99,7 @@ terraine sees it: tokens in place of names. It reads the file in the browser and
 These are terraine's choices, not rules of any standard. The owner can ask for others.
 
 - the token prefixes, and keeping bus bit indices
+- the list of bus roles
 - the `headroom` profile as the default
 - the scale range for `--scale random`, 0.5 to 2
 - rounding to 0.001 um
