@@ -110,6 +110,21 @@ It is published at https://claude.ai/artifact/Rszs9A9q233XLUYjJaiXhk (republish 
 `out/headroom.json` as `headroom.json`, to keep that URL). The cone viewer, `viewer.html`, is at
 https://claude.ai/artifact/YBtLdiyu2oh7Rz553Xg7V1 (with a graph JSON as `graph.json`).
 
+## Export kit for partners
+
+`kit/` is a Claude Code skill and five tools that a partner runs on their own machine. It extracts
+their placed design, replaces every name with a token, checks the result against their own DEF, LEF
+and Liberty files, and writes one file to send. The key that maps tokens to names stays with them.
+`kit/SKILL.md` is the workflow, `kit/DATA.md` lists every field of the export, and `kit/README.md`
+is for the people who install it.
+
+```bash
+kit/build_kit.sh /path/to/factory     # writes dist/placehead-export/ and dist/placehead-export.zip
+```
+
+The build copies def2graph from factory, `make_graph_json.py`, and `viewer.html` without its web
+fonts. `VERSION` in the kit names the commits. headroom.py and its viewer are not in the kit.
+
 ### Next steps, not done yet
 
 1. **Gate area.** Reserve the channel for logic, or charge each move for the area the gates need,
