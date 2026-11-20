@@ -110,6 +110,13 @@ It is published at https://claude.ai/artifact/Rszs9A9q233XLUYjJaiXhk (republish 
 `out/headroom.json` as `headroom.json`, to keep that URL). The cone viewer, `viewer.html`, is at
 https://claude.ai/artifact/YBtLdiyu2oh7Rz553Xg7V1 (with a graph JSON as `graph.json`).
 
+### Next steps, not done yet
+
+1. **Gate area.** Reserve the channel for logic, or charge each move for the area the gates need,
+   so a move does not take the space the OR trees and decoders sit in now.
+2. **A real placer.** Place two or three of the results with OpenROAD (not installed here; run it in
+   Docker) and measure the paths, to replace the straight-line bounds with real lengths.
+
 ## Export kit for partners
 
 `kit/` is a Claude Code skill and five tools that a partner runs on their own machine. It extracts
@@ -124,10 +131,3 @@ kit/build_kit.sh /path/to/factory     # writes dist/placehead-export/ and dist/p
 
 The build copies def2graph from factory, `make_graph_json.py`, and `viewer.html` without its web
 fonts. `VERSION` in the kit names the commits. headroom.py and its viewer are not in the kit.
-
-### Next steps, not done yet
-
-1. **Gate area.** Reserve the channel for logic, or charge each move for the area the gates need,
-   so a move does not take the space the OR trees and decoders sit in now.
-2. **A real placer.** Place two or three of the results with OpenROAD (not installed here; run it in
-   Docker) and measure the paths, to replace the straight-line bounds with real lengths.
