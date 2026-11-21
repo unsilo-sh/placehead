@@ -1,133 +1,77 @@
 # placehead: placement headroom analysis
 
-The test design is `sparse_mem_core`, copied from factory's `adapters/def2graph/examples/`.
+placehead estimates how much shorter the paths between a chip's top-level pins and its memories
+can get with a few placement moves: moving a bus's pins along the die edge, or mirroring a memory
+in place. It reports the headroom as the longest path and the total path length, before and after
+each move.
 
-## sparse_mem_core
+The analysis needs a placed design's connectivity and geometry. It does not need any name from the
+design. So the design owner extracts a graph on their own machine, removes every name from it, and
+sends terraine only that graph.
 
-A synthetic **48-bank SRAM core** (loosely an AI-inference scratchpad array) used
-to exercise def2graph's **memory-boundary** handling at scale. It is *not* a
-faithful accelerator model — it's a connectivity scaffold that produces the right
-graph structure: many memory macros reached from ports both combinationally and
-through flops, with read data flowing back to output ports.
+## How we work together
 
-![placement](placement.png)
+| Step | Who | Where | What |
+|---|---|---|---|
+| 1. Extract | Partner | Partner's machine | Read the placed DEF, LEF and Liberty files into a graph |
+| 2. Obfuscate | Partner | Partner's machine | Replace every name with a random token, and move the die to (0, 0). The key stays with the partner |
+| 3. Verify and audit | Partner | Partner's machine | Check that the export is the same design, and that no name from the design files is in it |
+| 4. Send | Partner | Partner's channel | Send one file, `design.export.json`, and its sha256 hash |
+| 5. Analyze | terraine | terraine | Run `analysis/headroom.py` on the export |
+| 6. Return | terraine | terraine's channel | Send the results. They name tokens, not real names |
+| 7. Reveal | Partner | Partner's machine | Put the real names back into the results with the key |
 
-48 tall `fakeram45_1024x32` SRAM banks (orange, 104×318 µm each) split into a
-**left group and a right group with a vertical channel** between them, on a
-2450×2200 µm die. The ~4,000 Nangate45 std cells (grey/red) fall into the channel
-and the inter-bank gaps; the 115 I/O pins sit on the bottom edge.
+Steps 1 to 4 are one Claude Code skill, `skills/placehead-export/`. Claude Code runs the tools with
+you and answers questions about what the export holds. You can also run the tools without Claude
+Code.
 
-## Files
+## For the partner
 
-| File | What it is |
-|---|---|
-| `gen.py` | Generator: emits the structural Verilog. Edit `NBANKS` / `MASTER` / `AW` / `DW` to change count, memory style, address and data widths |
-| `sparse_mem_core.v` | Generated gate-level netlist (48 banks + ~4,000 cells) |
-| `place.tcl` | OpenROAD placement script (floorplan → macro grid → pins → global/detailed place → `write_def`) |
-| `sparse_mem_core_placed.def` | The placed DEF — ready-to-use def2graph input |
-| `placement.png` | Floorplan figure above, drawn by `plot_placement.py` from def2graph's output |
-| `plot_placement.py` | Draws the placement from def2graph's `nodes.parquet` and the DEF's `DIEAREA` |
-| `make_graph_json.py` | Writes a graph JSON (format `placehead-graph/1`): def2graph's cones and every bank's wires on the placement, with pin positions from the LEF |
-| `viewer.html` | The viewer. It holds no design: it loads `graph.json` beside it, or a graph JSON you open or drop on it |
-| `fetch_pdk.sh` | Downloads the Nangate45 and fakeram45 LEF and Liberty files into `pdk/` (not checked in) |
+Read `SECURITY.md` first. It lists the data-protection practices for your security team.
 
-## Structure
+1. Install the Python packages (Python 3.9 or later):
 
-- Per-bank registered address (`DFF`) and shared registered write-data → port→flop→mem paths.
-- Combinational per-bank select/enable (`bank_sel` decode → `we`/`ce`) → port→mem paths.
-- Masked OR-reduction read path to a **combinational** output (`rdata_c`, so output
-  ports reach `rd_out`) and a **registered** output (`rdata_r`).
+   ```bash
+   python3 -m pip install pandas pyarrow
+   ```
 
-## Reproduce
+2. Install the skill for Claude Code:
 
-```bash
-python3 gen.py        # regenerate the netlist (sparse_mem_core.v is included)
+   ```bash
+   cp -R skills/placehead-export ~/.claude/skills/
+   ```
 
-# place with OpenROAD (needs the Nangate45 PDK + fakeram45_1024x32 LEF/LIB and an
-# openroad binary). Run place.tcl where Nangate45/*.lef|lib are visible, writing to /work.
-openroad -exit place.tcl
-```
+3. Try it on the synthetic design first. It runs steps 1 to 3 on a design with no secrets:
 
-## Run def2graph on it
+   ```bash
+   examples/sparse_mem_core/run_demo.sh
+   ```
 
-def2graph lives in factory, at `adapters/def2graph`. It needs `networkx`, `pandas` and `pyarrow`.
+4. Start Claude Code in a directory that can read your design, and ask, for example:
+   "Prepare this design for terraine's headroom analysis, and show me what leaves our site."
 
-```bash
-./fetch_pdk.sh
-PYTHONPATH=/path/to/factory/adapters/def2graph python3 -m def2graph \
-  --def sparse_mem_core_placed.def --lef pdk/*.lef --lib pdk/*.lib \
-  --out out/sparse_mem --formats parquet json
-python3 plot_placement.py --def sparse_mem_core_placed.def --graph out/sparse_mem -o placement.png
-python3 make_graph_json.py --def sparse_mem_core_placed.def --lef pdk/*.lef --graph out/sparse_mem -o out/sparse_mem_core.graph.json
-```
+`skills/placehead-export/SKILL.md` lists each command if you run the tools by hand.
+`skills/placehead-export/DATA.md` describes every field of the export.
 
-Expected: `fakeram45_1024x32` classified as **memory** (LEF `CLASS BLOCK` + Liberty
-`memory()`), **48/48 banks** detected as boundaries, and **1,968 memory endpoints**
-(input ports → `we_in`/`ce_in`/`clk`; output ports ← `rd_out`), each with its
-placement coordinate. Union graph ≈ 9.2k nodes / 13k edges.
+Run the tools outside this repository, or keep their output in the ignored directories `work/`
+and `export/`. `.gitignore` keeps keys, roles files and exports out of git.
 
-## View a graph
+## Repository layout
 
-`viewer.html` draws any graph JSON that `make_graph_json.py` writes. Open the viewer, then click
-**Open graph file…** or drop the JSON on the page. The file stays in your browser.
+| Path | Holds | Runs at |
+|---|---|---|
+| `SECURITY.md` | Data-protection practices, for a security review | |
+| `skills/placehead-export/` | The skill: extract, obfuscate, verify, audit and reveal tools, the vendored def2graph reader, the field list and an offline viewer | Partner |
+| `analysis/` | The headroom analysis and its results viewer. It is here so you can see what terraine computes from your export | terraine |
+| `examples/sparse_mem_core/` | A synthetic 48-memory design, to try the skill on | Either |
+| `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository. `vendor_def2graph.sh` refreshes the vendored reader | terraine |
 
-On load, the viewer also looks for `graph.json` beside it. The published viewer has
-`out/sparse_mem_core.graph.json` there. A browser does not let a page opened from disk read
-files beside it, so open a local copy of `viewer.html` and load the JSON with the button.
+## Viewers
 
-## Placement headroom
+Both viewers are single HTML files that load nothing from the web. Open one in a browser and pick a
+file with its open button. The file stays in the browser.
 
-`headroom.py` estimates how much shorter the port-to-memory paths get with a few moves:
-relocating or flipping a bank, or moving one bus's pins along the bottom edge. It scores a
-placement by the Manhattan distance between each path's two ends, the shortest a placer could make
-it, as the worst path and as the total over bank pins. For each port budget it makes the best
-port moves, then up to K bank moves, greedily.
-
-```bash
-python3 headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 --check-lp -o out/headroom.json
-```
-
-`--keepout X0,Y0,X1,Y1` (repeatable) reserves a rectangle no bank may overlap, for example the aisle
-between the bank groups: `--keepout 1044.5,0,1405,2200`.
-The published results keep the bank array where it is: the aisle is kept for logic, and no bank may
-move above the array or down toward the pins. Bank moves are then mirrors in place:
-`--k 48 --orders --keepout 1044.5,0,1405,2200 --keepout 0,1077.8,2450,2200 --keepout 0,0,2450,80`.
-`--orders` also scores every bus order (8! = 40,320), each bank mirrored in place its best way, and
-adds a path from today to each order no other order beats on both scores: one bus move at a time,
-then one mirror at a time.
-
-The results (format `placehead-headroom/2`) hold every variant tried, each with its parent, the
-variant one move before it, so any variant traces back to today. The results page draws them as a
-tree: moves from today against cost, worst path or total. Click a variant to see its path.
-
-`--check-lp` also places the gates by a linear program. With no limit on gate area it matches the
-Manhattan score. The bank spacing, die margin, pin keep-out and grid step are our choices, at
-the top of the file.
-
-`headroom_viewer.html` shows the results: it loads `headroom.json` beside it, or a results file you
-open. Pick which score the search lowers first and the port budget, then step through the bank moves.
-It is published at https://claude.ai/artifact/Rszs9A9q233XLUYjJaiXhk (republish from this file, with
-`out/headroom.json` as `headroom.json`, to keep that URL). The cone viewer, `viewer.html`, is at
-https://claude.ai/artifact/YBtLdiyu2oh7Rz553Xg7V1 (with a graph JSON as `graph.json`).
-
-### Next steps, not done yet
-
-1. **Gate area.** Reserve the channel for logic, or charge each move for the area the gates need,
-   so a move does not take the space the OR trees and decoders sit in now.
-2. **A real placer.** Place two or three of the results with OpenROAD (not installed here; run it in
-   Docker) and measure the paths, to replace the straight-line bounds with real lengths.
-
-## Export kit for partners
-
-`kit/` is a Claude Code skill and five tools that a partner runs on their own machine. It extracts
-their placed design, replaces every name with a token, checks the result against their own DEF, LEF
-and Liberty files, and writes one file to send. The key that maps tokens to names stays with them.
-`kit/SKILL.md` is the workflow, `kit/DATA.md` lists every field of the export, and `kit/README.md`
-is for the people who install it.
-
-```bash
-kit/build_kit.sh /path/to/factory     # writes dist/placehead-export/ and dist/placehead-export.zip
-```
-
-The build copies def2graph from factory, `make_graph_json.py`, and `viewer.html` without its web
-fonts. `VERSION` in the kit names the commits. headroom.py and its viewer are not in the kit.
+- `skills/placehead-export/viewer.html` draws an export, or a graph with real names, on its
+  floorplan: each port's logic cone, and each memory's wires.
+- `analysis/headroom_viewer.html` draws headroom results: every variant tried, its cost, and the
+  moves from today's placement to it.

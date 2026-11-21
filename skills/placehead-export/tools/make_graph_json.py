@@ -1,8 +1,7 @@
-"""Write a graph JSON for viewer.html: def2graph's port cones on the placement.
+"""Write a graph JSON (format placehead-graph/1): def2graph's port cones on the placement.
 
-Usage:
-    python make_graph_json.py --def sparse_mem_core_placed.def --lef pdk/*.lef \
-        --graph out/sparse_mem -o out/sparse_mem_core.graph.json
+Usage (extract.py runs it):
+    python make_graph_json.py --def design.def --lef *.lef --graph work/graph -o work/graph.json
 
 def2graph decides what is in each cone (cones.json, nodes.parquet). This script
 adds geometry: each pin's position from its cell's LEF pin shape and the cell's

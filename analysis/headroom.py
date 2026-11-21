@@ -1,7 +1,7 @@
 """Placement headroom: how much shorter port-to-memory paths get with a few moves.
 
 Usage:
-    python headroom.py out/sparse_mem_core.graph.json --k 8 --ports 2 -o out/headroom.json
+    python analysis/headroom.py design.export.json --k 8 --ports 2 -o out/headroom.json
 
 Paths: the wires in def2graph's cones from an input port, through gates, to a bank input pin,
 and from a bank output pin, through gates, to an output port.

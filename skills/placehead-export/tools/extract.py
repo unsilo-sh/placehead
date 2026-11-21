@@ -4,10 +4,10 @@ Usage:
     python extract.py --def design.def --lef tech.lef cells.lef sram.lef --lib cells.lib sram.lib \
         --work work/
 
-It runs two programs from vendor/, on this machine only:
-  def2graph          reads the DEF, LEF and Liberty files and traces each port's logic cone to the
+It runs two programs, on this machine only:
+  def2graph          (vendor/) reads the DEF, LEF and Liberty files and traces each port's logic cone to the
                      flops and memories it reaches. Writes work/graph/ (parquet and JSON).
-  make_graph_json.py adds each pin's position from the LEF and each wire's two ends. Writes
+  make_graph_json.py (tools/) adds each pin's position from the LEF and each wire's two ends. Writes
                      work/graph.json.
 
 The DEF needs placement. Routing is not read. Liberty is read only to tell flops, memories and
@@ -19,7 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-VENDOR = Path(__file__).resolve().parent.parent / "vendor"
+TOOLS = Path(__file__).resolve().parent
+VENDOR = TOOLS.parent / "vendor"
 
 
 def main(argv=None):
@@ -38,7 +39,7 @@ def main(argv=None):
     # -q: def2graph prints no design names, only progress counts.
     run(["-m", "def2graph", "--def", args.def_path, "--lef", *args.lef, "--lib", *args.lib,
          "--out", str(work / "graph"), "--formats", "parquet", "json", "-q"])
-    run([str(VENDOR / "make_graph_json.py"), "--def", args.def_path, "--lef", *args.lef,
+    run([str(TOOLS / "make_graph_json.py"), "--def", args.def_path, "--lef", *args.lef,
          "--graph", str(work / "graph"), "-o", str(work / "graph.json")])
     print(f"wrote {work / 'graph.json'}. It holds real names: obfuscate it, and do not send it.")
 

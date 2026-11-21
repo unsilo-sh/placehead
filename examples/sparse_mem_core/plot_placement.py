@@ -1,7 +1,7 @@
 """Draw a placement from def2graph's output.
 
 Usage:
-    python plot_placement.py --def sparse_mem_core_placed.def --graph out/sparse_mem -o placement.png
+    python plot_placement.py --def sparse_mem_core_placed.def --graph demo/work/graph -o placement.png
 
 Reads nodes.parquet (instance x/y in DEF units, width/height in um) and
 summary.json (DEF units per um) from the def2graph output directory, and the

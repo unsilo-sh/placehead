@@ -1,4 +1,15 @@
+# Design data never belongs in this repository. These outputs of the export tools hold real
+# names (work/, key.json, roles.json) or a design's export: keep them out of git.
+work/
+export/
+demo/
+key.json
+roles.json
+*.export.json
+
+# Downloaded or generated
 pdk/
 out/
-__pycache__/
 dist/
+__pycache__/
+.DS_Store

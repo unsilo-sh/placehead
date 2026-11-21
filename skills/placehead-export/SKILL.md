@@ -34,17 +34,20 @@ These rules apply because anything you read or print in this session goes to the
 | Path | Holds | Leaves the site? |
 |---|---|---|
 | `tools/extract.py` | Runs def2graph and make_graph_json.py on the design | No |
+| `tools/make_graph_json.py` | Adds each pin's position from the LEF and each wire's two ends | No |
 | `tools/obfuscate.py` | Replaces names with tokens and writes the key | No |
 | `tools/verify.py` | Checks that the export is the same design with only names, order and scale changed | No |
 | `tools/audit.py` | Checks that the export holds no design names, and lists what it still shows | No |
 | `tools/reveal.py` | Puts real names back into a file that terraine returns | No |
-| `vendor/` | def2graph (reads DEF, LEF and Liberty) and make_graph_json.py (adds pin positions) | No |
+| `vendor/def2graph/` | Reads DEF, LEF and Liberty, and traces each port's logic cone. `vendor/README.md` names its source | No |
 | `DATA.md` | Every field of the export: what it holds, and why the analysis needs it | No |
 | `viewer.html` | terraine's cone viewer: draws an export on its floorplan, offline | No |
 | `work/` (made by the tools) | The design's graph with real names, and the key | **Never** |
 | `export/` (made by the tools) | The export file only | **Yes, this one file** |
 
-`VERSION` names the commits the kit was built from.
+This skill is one directory of the placehead repository, `skills/placehead-export/`. The
+repository's `SECURITY.md` summarizes the data-protection practices for a security team. A zip
+of the skill has a `VERSION` file that names the commit it was built from.
 
 ## Setup
 
