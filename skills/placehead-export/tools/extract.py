@@ -4,10 +4,10 @@ Usage:
     python extract.py --def design.def --lef tech.lef cells.lef sram.lef --lib cells.lib sram.lib \
         --work work/
 
-It runs two programs, on this machine only:
-  def2graph          (vendor/) reads the DEF, LEF and Liberty files and traces each port's logic cone to the
-                     flops and memories it reaches. Writes work/graph/ (parquet and JSON).
-  make_graph_json.py (tools/) adds each pin's position from the LEF and each wire's two ends. Writes
+It runs two programs from tools/, on this machine only:
+  def2graph/         reads the DEF, LEF and Liberty files and traces each port's logic cone to
+                     the flops and memories it reaches. Writes work/graph/ (parquet and JSON).
+  make_graph_json.py adds each pin's position from the LEF and each wire's two ends. Writes
                      work/graph.json.
 
 The DEF needs placement. Routing is not read. Liberty is read only to tell flops, memories and
@@ -20,7 +20,6 @@ import sys
 from pathlib import Path
 
 TOOLS = Path(__file__).resolve().parent
-VENDOR = TOOLS.parent / "vendor"
 
 
 def main(argv=None):
@@ -33,7 +32,7 @@ def main(argv=None):
 
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ, PYTHONPATH=str(VENDOR))
+    env = dict(os.environ, PYTHONPATH=str(TOOLS))
     run = lambda cmd: subprocess.run([sys.executable, *cmd], env=env, check=True)
 
     # -q: def2graph prints no design names, only progress counts.

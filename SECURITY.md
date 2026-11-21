@@ -3,7 +3,7 @@
 These practices apply to the placement headroom export. Each one points to where you can check it.
 
 - **Runs on your side.** The extraction tools run on your machine and make no network connections.
-  They are short Python files in `skills/placehead-export/tools/` and `vendor/`.
+  They are short Python files in `skills/placehead-export/tools/`.
 - **Minimum data.** The tools read only placement and connectivity. They never read timing, power,
   routing or RTL. By default, the export keeps only the logic paths that start at the chip's
   top-level pins and end at the first flip-flop or memory they reach. It also keeps the cells on

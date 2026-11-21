@@ -61,10 +61,10 @@ and `export/`. `.gitignore` keeps keys, roles files and exports out of git.
 | Path | Holds | Runs at |
 |---|---|---|
 | `SECURITY.md` | Data-protection practices, for a security review | |
-| `skills/placehead-export/` | The skill: extract, obfuscate, verify, audit and reveal tools, the vendored def2graph reader, the field list and an offline viewer | Partner |
+| `skills/placehead-export/` | The skill: extract, obfuscate, verify, audit and reveal tools, the def2graph reader, the field list and an offline viewer | Partner |
 | `analysis/` | The headroom analysis and its results viewer. It is here so you can see what terraine computes from your export | terraine |
 | `examples/sparse_mem_core/` | A synthetic 48-memory design, to try the skill on | Either |
-| `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository. `vendor_def2graph.sh` refreshes the vendored reader | terraine |
+| `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository | terraine |
 
 ## Viewers
 
