@@ -92,11 +92,11 @@ design's numbers:
 ## Look at the export
 
 Open `viewer.html` in a browser and pick the export with **Open graph file**. The page draws it as
-terraine sees it: tokens in place of names. It reads the file in the browser and sends it nowhere.
+unsilo sees it: tokens in place of names. It reads the file in the browser and sends it nowhere.
 
-## terraine's choices
+## unsilo's choices
 
-These are terraine's choices, not rules of any standard. The owner can ask for others.
+These are unsilo's choices, not rules of any standard. The owner can ask for others.
 
 - the token prefixes, and keeping bus bit indices
 - the list of bus roles

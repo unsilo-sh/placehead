@@ -7,7 +7,7 @@ each move.
 
 The analysis needs a placed design's connectivity and geometry. It does not need any name from the
 design. So the design owner extracts a graph on their own machine, removes every name from it, and
-sends terraine only that graph.
+sends unsilo only that graph.
 
 ## How we work together
 
@@ -17,8 +17,8 @@ sends terraine only that graph.
 | 2. Obfuscate | Partner | Partner's machine | Replace every name with a random token, and move the die to (0, 0). The key stays with the partner |
 | 3. Verify and audit | Partner | Partner's machine | Check that the export is the same design, and that no name from the design files is in it |
 | 4. Send | Partner | Partner's channel | Send one file, `design.export.json`, and its sha256 hash |
-| 5. Analyze | terraine | terraine | Run `analysis/headroom.py` on the export |
-| 6. Return | terraine | terraine's channel | Send the results. They name tokens, not real names |
+| 5. Analyze | unsilo | unsilo | Run `analysis/headroom.py` on the export |
+| 6. Return | unsilo | unsilo's channel | Send the results. They name tokens, not real names |
 | 7. Reveal | Partner | Partner's machine | Put the real names back into the results with the key |
 
 Steps 1 to 4 are one Claude Code skill, `skills/placehead-export/`. Claude Code runs the tools with
@@ -48,7 +48,7 @@ Read `SECURITY.md` first. It lists the data-protection practices for your securi
    ```
 
 4. Start Claude Code in a directory that can read your design, and ask, for example:
-   "Prepare this design for terraine's headroom analysis, and show me what leaves our site."
+   "Prepare this design for unsilo's headroom analysis, and show me what leaves our site."
 
 `skills/placehead-export/SKILL.md` lists each command if you run the tools by hand.
 `skills/placehead-export/DATA.md` describes every field of the export.
@@ -62,9 +62,9 @@ and `export/`. `.gitignore` keeps keys, roles files and exports out of git.
 |---|---|---|
 | `SECURITY.md` | Data-protection practices, for a security review | |
 | `skills/placehead-export/` | The skill: extract, obfuscate, verify, audit and reveal tools, the def2graph reader, the field list and an offline viewer | Partner |
-| `analysis/` | The headroom analysis and its results viewer. It is here so you can see what terraine computes from your export | terraine |
+| `analysis/` | The headroom analysis and its results viewer. It is here so you can see what unsilo computes from your export | unsilo |
 | `examples/sparse_mem_core/` | A synthetic 48-memory design, to try the skill on | Either |
-| `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository | terraine |
+| `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository | unsilo |
 
 ## Viewers
 

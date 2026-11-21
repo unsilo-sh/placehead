@@ -1,16 +1,16 @@
 ---
 name: placehead-export
-description: Prepare a placed design for terraine's placement headroom analysis, and explain exactly what data leaves your site. Use when the user wants to export a DEF for terraine, check an export for sensitive data, review what the obfuscation hides and what it does not, or read terraine's results with the real names.
+description: Prepare a placed design for unsilo's placement headroom analysis, and explain exactly what data leaves your site. Use when the user wants to export a DEF for unsilo, check an export for sensitive data, review what the obfuscation hides and what it does not, or read unsilo's results with the real names.
 ---
 
 # placehead export kit
 
-terraine's placement headroom analysis estimates how much shorter the paths between a design's
+unsilo's placement headroom analysis estimates how much shorter the paths between a design's
 ports and its memories can get with a few moves. It needs the placed design's connectivity and
 geometry. It does not need any name from the design.
 
 This kit runs on the design owner's machine. It reads the design, replaces every name with a
-meaningless token, checks the result, and writes one file to send to terraine. The key that maps
+meaningless token, checks the result, and writes one file to send to unsilo. The key that maps
 tokens back to names stays with the owner. Your job is to run the kit with the user and to answer
 their questions about what the file holds. Their security team may ask these questions too.
 
@@ -38,10 +38,10 @@ These rules apply because anything you read or print in this session goes to the
 | `tools/obfuscate.py` | Replaces names with tokens and writes the key | No |
 | `tools/verify.py` | Checks that the export is the same design with only names, order and scale changed | No |
 | `tools/audit.py` | Checks that the export holds no design names, and lists what it still shows | No |
-| `tools/reveal.py` | Puts real names back into a file that terraine returns | No |
+| `tools/reveal.py` | Puts real names back into a file that unsilo returns | No |
 | `tools/def2graph/` | Reads DEF, LEF and Liberty, and traces each port's logic cone | No |
 | `DATA.md` | Every field of the export: what it holds, and why the analysis needs it | No |
-| `viewer.html` | terraine's cone viewer: draws an export on its floorplan, offline | No |
+| `viewer.html` | unsilo's cone viewer: draws an export on its floorplan, offline | No |
 | `work/` (made by the tools) | The design's graph with real names, and the key | **Never** |
 | `export/` (made by the tools) | The export file only | **Yes, this one file** |
 
@@ -114,13 +114,13 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
 
 5. **Review.** Go through the audit's "What the export still shows" list with the user. Each item
    is data the security team must accept. `DATA.md` explains each item. To show the user the
-   export as terraine sees it, have them open `viewer.html` in a browser and pick the export
+   export as unsilo sees it, have them open `viewer.html` in a browser and pick the export
    with **Open graph file**. The page reads the file in the browser and sends it nowhere.
 
 6. **Send.** The user sends `export/design.export.json` and its sha256 from the audit report.
    Nothing else leaves the site.
 
-7. **Read the results.** terraine returns results that name tokens. Put the real names back:
+7. **Read the results.** unsilo returns results that name tokens. Put the real names back:
 
    ```bash
    python3 $KIT/tools/reveal.py headroom.json --key work/key.json -o work/headroom.revealed.json
@@ -128,20 +128,20 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
 
 ## Options
 
-Explain these choices to the user, and let them decide. The defaults are terraine's choices, not
+Explain these choices to the user, and let them decide. The defaults are unsilo's choices, not
 fixed rules.
 
 - `--profile headroom` (default) keeps only what the headroom analysis reads: the wires inside the
   port cones, the cells on them, every memory and every port. `--profile full` keeps every wire.
-  The full profile also lets terraine draw the wires outside the cones.
+  The full profile also lets unsilo draw the wires outside the cones.
 - `--scale 1` (default) keeps lengths in um. `--scale random` multiplies every coordinate and
   length by one secret factor between 0.5 and 2, kept in the key. This hides the absolute die size
-  and cell heights. It gives limited protection: terraine's analysis uses spacing rules in um, so the
-  user must tell terraine the factor, or terraine's results will be inexact. Ratios between sizes
+  and cell heights. It gives limited protection: unsilo's analysis uses spacing rules in um, so the
+  user must tell unsilo the factor, or unsilo's results will be inexact. Ratios between sizes
   stay visible at any scale.
 - `--roles` (opt-in, off by default) sends a role for each bus the user chooses, from a fixed list:
   clock, reset, address, write_data, read_data, write_enable, chip_enable, select, other. The
-  export holds the role, never the bus's real name. Roles make terraine's results easier to read.
+  export holds the role, never the bus's real name. Roles make unsilo's results easier to read.
   The audit lists the roles that leave the site, and fails on any other word.
 
 ## Questions users ask
@@ -150,12 +150,12 @@ Answer from the code. These pointers say where to look.
 
 - *What leaves the site?* One JSON file. `DATA.md` lists every field. `audit.py` check 1 fails
   on any key that the format does not have.
-- *Can terraine get the names back?* Not from the export. Tokens are numbers in a random order,
+- *Can unsilo get the names back?* Not from the export. Tokens are numbers in a random order,
   not hashes of names, so there is nothing to guess against (`obfuscate.py`, the `shuffled` and
   `*_tok` lines). Only the key maps them back, and the key stays in `work/`.
-- *What can terraine still learn?* The structure and the floorplan: counts, sizes, positions,
+- *What can unsilo still learn?* The structure and the floorplan: counts, sizes, positions,
   and which cell drives which. The audit lists these items with this design's numbers.
   Say this plainly. Obfuscation hides names, not structure.
 - *Is the design's process or library visible?* No library, cell or process name is in the file.
   At scale 1, cell heights are in um, and a reader can match a row height to a known library.
-- *Does anything run on terraine's side before the file arrives?* No. The kit runs only here.
+- *Does anything run on unsilo's side before the file arrives?* No. The kit runs only here.

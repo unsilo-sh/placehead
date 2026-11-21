@@ -35,7 +35,7 @@ TOP_KEYS = {"format", "design", "die", "kinds", "cells", "inst", "ports", "segs"
             "segBus", "segInfo", "cones", "banks", "summary"}
 OPTIONAL_KEYS = {"roles"}
 
-# Opt-in: the role of a bus, from this fixed list only (terraine's list; ask to extend it).
+# Opt-in: the role of a bus, from this fixed list only (unsilo's list; ask to extend it).
 # The export holds the role in "roles", keyed by bus token, and never the bus's real name.
 ROLES = ("clock", "reset", "address", "write_data", "read_data", "write_enable", "chip_enable",
          "select", "other")

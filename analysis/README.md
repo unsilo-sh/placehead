@@ -1,6 +1,6 @@
 # analysis
 
-terraine runs this code on a partner's export. It reads only the export, so its results name
+unsilo runs this code on a partner's export. It reads only the export, so its results name
 tokens, not real names. The partner puts the real names back with `reveal.py` and their key.
 
 ## headroom.py
@@ -33,7 +33,7 @@ python3 analysis/headroom.py design.export.json --k 48 --ports 2 --orders \
 ```
 
 `--keepout X0,Y0,X1,Y1` (repeatable) reserves a rectangle no memory may overlap, for example a
-channel kept for logic. The memory spacing, die margin, pin keep-out and grid step are terraine's
+channel kept for logic. The memory spacing, die margin, pin keep-out and grid step are unsilo's
 choices, at the top of the file.
 
 The results (format `placehead-headroom/2`) hold every variant tried. Each variant names its

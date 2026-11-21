@@ -13,7 +13,7 @@ These practices apply to the placement headroom export. Each one points to where
   random token before export. If you choose, each top-level bus can carry a role from a fixed
   list, such as clock, address or read data. The audit rejects any word that is not on that list.
 - **You hold the key.** Only your key maps tokens back to real names. It stays with you and is
-  never sent to terraine.
+  never sent to unsilo.
 - **Checked before it is sent.** An audit tool compares the export against your own design files,
   and fails if any name from them appears. It also lists exactly what the export still shows.
 - **One file, your channel.** A single file leaves your site, through your own approved channel.
@@ -27,7 +27,7 @@ These practices apply to the placement headroom export. Each one points to where
 | What is in the export, field by field? | `skills/placehead-export/DATA.md` |
 | What does the audit check? | `skills/placehead-export/tools/audit.py`, its first lines |
 | How are names replaced? | `skills/placehead-export/tools/obfuscate.py` |
-| What does terraine compute from the export? | `analysis/headroom.py` |
+| What does unsilo compute from the export? | `analysis/headroom.py` |
 | What does Claude Code read, if you use the skill? | `skills/placehead-export/SKILL.md`, "Rules for you, in this session" |
 
 If you use Claude Code, anything it reads goes to your model provider, under your organization's

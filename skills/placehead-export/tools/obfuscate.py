@@ -173,7 +173,7 @@ def main(argv=None):
     toks |= {f"oc{j}" for j in range(len(cell_order))}
     clash = toks & real
     if clash:
-        sys.exit(f"error: {len(clash)} tokens equal real names in this design. Tell terraine.")
+        sys.exit(f"error: {len(clash)} tokens equal real names in this design. Tell unsilo.")
 
     # ---- geometry ----
     X = lambda x: round((x - ox) * scale, 3)
