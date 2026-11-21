@@ -21,9 +21,9 @@ between top-level pins and memories get with a few placement moves.
 | 6. Return | unsilo | unsilo's channel | Send the results. They name tokens, not real names |
 | 7. Reveal | Partner | Partner's machine | Put the real names back into the results with the key |
 
-Steps 1 to 4 are one Claude Code skill, `skills/placehead-export/`. Claude Code runs the tools with
-you and answers questions about what the export holds. You can also run the tools without Claude
-Code.
+Steps 1 to 4 are one agent skill, `skills/placehead-export/`. `SKILL.md` holds the workflow: each
+command, each check, and the rules for which files may be read in an agent session. `DATA.md`
+describes every field of the export.
 
 ## For the partner
 
@@ -35,26 +35,24 @@ Read `SECURITY.md` first. It lists the data-protection practices for your securi
    python3 -m pip install pandas pyarrow
    ```
 
-2. Install the skill for Claude Code:
+2. Install the skill. For Claude Code:
 
    ```bash
    cp -R skills/placehead-export ~/.claude/skills/
    ```
 
-3. Try it on the synthetic design first. It runs steps 1 to 3 on a design with no secrets:
+3. Run the workflow on the synthetic design. It runs steps 1 to 3 on a design with no secrets:
 
    ```bash
    examples/sparse_mem_core/run_demo.sh
    ```
 
-4. Start Claude Code in a directory that can read your design, and ask, for example:
-   "Prepare this design for unsilo's placement analysis, and show me what leaves our site."
+4. Run the workflow on your design, from a directory that can read it. With the skill installed,
+   an agent session can start from a request such as: "Prepare this design for unsilo's placement
+   analysis, and show me what leaves our site."
 
-`skills/placehead-export/SKILL.md` lists each command if you run the tools by hand.
-`skills/placehead-export/DATA.md` describes every field of the export.
-
-Run the tools outside this repository, or keep their output in the ignored directories `work/`
-and `export/`. `.gitignore` keeps keys, roles files and exports out of git.
+Keep the workflow's output outside this repository, or in the ignored directories `work/` and
+`export/`. `.gitignore` keeps keys, roles files and exports out of git.
 
 ## Repository layout
 
