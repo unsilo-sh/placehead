@@ -20,14 +20,14 @@ The numbers come from a random shuffle. They are not hashes of the names, so a r
 a guessed name against a token. The key in `work/key.json` is the only map back to the names.
 `obfuscate.py` stops if any token equals a real name in the design.
 
-A bus keeps its bit indices because the analysis moves a bus's pins as a group. So a reader can see
+A bus keeps its bit indices because an analysis may move a bus's pins as a group. So a reader can see
 that `ob3` has 32 bits. A reader cannot see that it was named `rdata`.
 
 ## Fields
 
 Units are um, times the scale if `--scale` was used. The die's lower-left corner is at (0, 0).
 
-| Field | Holds | The analysis uses it to |
+| Field | Holds | An analysis uses it to |
 |---|---|---|
 | `format` | `placehead-graph/1` | read the file |
 | `design` | the word `design`, never the design's name | label the page |
@@ -37,7 +37,7 @@ Units are um, times the scale if `--scale` was used. The die's lower-left corner
 | `inst` | per instance: token, kind, x, y, width, height, cell type | place memories and the cells on paths |
 | `ports` | per port: token, direction (`I` or `O`), x, y | place path ends, and move buses |
 | `segs` | per wire: x and y of both ends | measure wire lengths |
-| `segInCone` | per wire: 1 if it is in a port's logic cone | pick the paths the analysis scores |
+| `segInCone` | per wire: 1 if it is in a port's logic cone | pick the paths an analysis scores |
 | `segBus` | per wire: 1 if it carries a bus bit | let the viewer hide other wires |
 | `segInfo` | per wire: driver index and pin, sink index and pin, net token, length | follow paths from cell to cell |
 | `cones` | per port token: direction, member cells, wires, endpoints (cell, pin, kind, depth, path length), depth | score each port's paths |
@@ -63,7 +63,7 @@ roles file that the owner fills in holds the real bus names, so it stays in `wor
 
 ## Profiles
 
-- `headroom` (default): keeps the wires inside the cones, the cells on them, every memory and
+- `cones` (default): keeps the wires inside the cones, the cells on them, every memory and
   every port. `summary.nets` counts only the nets in the file.
 - `full`: keeps every wire and every cell, and the design's total net count.
 
@@ -100,6 +100,6 @@ These are unsilo's choices, not rules of any standard. The owner can ask for oth
 
 - the token prefixes, and keeping bus bit indices
 - the list of bus roles
-- the `headroom` profile as the default
+- the `cones` profile as the default
 - the scale range for `--scale random`, 0.5 to 2
 - rounding to 0.001 um

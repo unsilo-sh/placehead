@@ -2,7 +2,7 @@
 
 Usage:
     python obfuscate.py work/graph.json --key work/key.json -o export/design.export.json
-        [--profile headroom|full] [--scale 1|random|FACTOR]
+        [--profile cones|full] [--scale 1|random|FACTOR]
 
 The input is the graph JSON that extract.py writes (format placehead-graph/1). It holds real names.
 The output holds no name from the design. Only the output leaves your site. The key stays with you.
@@ -14,8 +14,8 @@ What changes:
             sort order of the real names.
   geometry  coordinates move so that the die's lower-left corner is (0, 0). With --scale, every
             coordinate and length is also multiplied by one factor, kept in the key.
-  profile   headroom (the default) keeps only what the headroom analysis reads: the wires inside
-            the port cones, the cells on them, every memory and every port. full keeps every wire.
+  profile   cones (the default) keeps only the wires inside the port cones, the cells on them,
+            every memory and every port. full keeps every wire and every cell.
   roles     opt-in, with --roles: each bus you list gets a role from a fixed list (common.ROLES),
             such as read_data. The export holds the role, never the bus's real name.
             --roles-template work/roles.json writes a file to fill in, then stops. It holds the
@@ -75,7 +75,7 @@ def main(argv=None):
     ap.add_argument("--roles", help="opt-in: a filled-in roles file; the export carries each bus's role")
     ap.add_argument("--key", help="where to write the key (keep it; never send it)")
     ap.add_argument("-o", "--out", help="the export file to write")
-    ap.add_argument("--profile", choices=["headroom", "full"], default="headroom")
+    ap.add_argument("--profile", choices=["cones", "full"], default="cones")
     ap.add_argument("--scale", default="1", help="1 (default), random (0.5 to 2), or a factor")
     ap.add_argument("--seed", type=int, help="fixed shuffle, for tests only: anyone with the seed "
                                              "can undo the shuffle, not the names")
@@ -221,7 +221,7 @@ def main(argv=None):
     data["banks"] = dict(sorted(banks.items()))
     data["summary"] = {"flop_endpoints": g["summary"]["flop_endpoints"],
                        "memory_endpoints": g["summary"]["memory_endpoints"],
-                       "nets": len(nets) if args.profile == "headroom" else g["summary"]["nets"]}
+                       "nets": len(nets) if args.profile == "cones" else g["summary"]["nets"]}
     roles = read_roles(args.roles, g) if args.roles else {}
     if roles:
         data["roles"] = dict(sorted((bus_tok[b], r) for b, r in roles.items()))

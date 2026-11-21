@@ -1,4 +1,4 @@
-"""Put the real names back into a file that unsilo sends you, such as headroom results.
+"""Put the real names back into a file that unsilo sends you, such as analysis results.
 
 Usage:
     python reveal.py results.json --key work/key.json -o results.revealed.json

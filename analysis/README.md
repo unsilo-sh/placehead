@@ -1,9 +1,13 @@
 # analysis
 
-unsilo runs this code on a partner's export. It reads only the export, so its results name
-tokens, not real names. The partner puts the real names back with `reveal.py` and their key.
+unsilo builds an analysis for each client, around the client's design and the questions they
+want answered. That work is most of an engagement. This directory holds one example,
+`headroom.py`, to show the kind of analysis an export supports.
 
-## headroom.py
+Every analysis reads only the export, so its results name tokens, not real names. The partner puts
+the real names back with `reveal.py` and their key.
+
+## Example: headroom.py
 
 `headroom.py` estimates how much shorter the paths between top-level pins and memories get with a
 few moves. A path runs from an input port, through logic cells, to a memory input pin, or from a
@@ -39,20 +43,20 @@ choices, at the top of the file.
 The results (format `placehead-headroom/2`) hold every variant tried. Each variant names its
 parent, the variant one move before it, so any variant traces back to today's placement.
 
-## headroom_viewer.html
+### headroom_viewer.html
 
 The viewer draws the results: each variant's cost against the number of moves from today, or worst
 path against total. Click a variant to see its moves and its floorplan. Open the page in a browser
 and pick a results file.
 
-## Limits
+### Limits of the example
 
 - **Bounds, not placements.** Scores are lower bounds on wire length, not routed lengths. A real
   placer run on the best variants would measure the real gain.
 - **No area for logic.** A move does not account for the area the logic cells need. A memory move
   can take space that logic cells use today.
 
-## Results on the synthetic design
+### Results on the synthetic design
 
 On `examples/sparse_mem_core`, with the memory array fixed and the channel between its halves kept
 for logic, port moves give most of the headroom. Two bus moves shorten the worst path by 24% and

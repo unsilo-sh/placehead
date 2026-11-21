@@ -1,13 +1,13 @@
-# placehead: placement headroom analysis
+# placehead: placement analysis on an obfuscated graph
 
-placehead estimates how much shorter the paths between a chip's top-level pins and its memories
-can get with a few placement moves: moving a bus's pins along the die edge, or mirroring a memory
-in place. It reports the headroom as the longest path and the total path length, before and after
-each move.
+placehead lets a design owner share a placed design with unsilo for analysis, without sharing any
+name from the design. The owner extracts a graph of the placement on their own machine, removes
+every name from it, and sends unsilo only that graph.
 
-The analysis needs a placed design's connectivity and geometry. It does not need any name from the
-design. So the design owner extracts a graph on their own machine, removes every name from it, and
-sends unsilo only that graph.
+unsilo builds the analysis for each client, around that client's design and questions. Placement
+analysis needs a design's connectivity and geometry, not its names, so one export format serves
+every analysis. `analysis/headroom.py` is an example: it estimates how much shorter the paths
+between top-level pins and memories get with a few placement moves.
 
 ## How we work together
 
@@ -17,7 +17,7 @@ sends unsilo only that graph.
 | 2. Obfuscate | Partner | Partner's machine | Replace every name with a random token, and move the die to (0, 0). The key stays with the partner |
 | 3. Verify and audit | Partner | Partner's machine | Check that the export is the same design, and that no name from the design files is in it |
 | 4. Send | Partner | Partner's channel | Send one file, `design.export.json`, and its sha256 hash |
-| 5. Analyze | unsilo | unsilo | Run `analysis/headroom.py` on the export |
+| 5. Analyze | unsilo | unsilo | Run the analysis built for this client on the export |
 | 6. Return | unsilo | unsilo's channel | Send the results. They name tokens, not real names |
 | 7. Reveal | Partner | Partner's machine | Put the real names back into the results with the key |
 
@@ -48,7 +48,7 @@ Read `SECURITY.md` first. It lists the data-protection practices for your securi
    ```
 
 4. Start Claude Code in a directory that can read your design, and ask, for example:
-   "Prepare this design for unsilo's headroom analysis, and show me what leaves our site."
+   "Prepare this design for unsilo's placement analysis, and show me what leaves our site."
 
 `skills/placehead-export/SKILL.md` lists each command if you run the tools by hand.
 `skills/placehead-export/DATA.md` describes every field of the export.
@@ -62,7 +62,7 @@ and `export/`. `.gitignore` keeps keys, roles files and exports out of git.
 |---|---|---|
 | `SECURITY.md` | Data-protection practices, for a security review | |
 | `skills/placehead-export/` | The skill: extract, obfuscate, verify, audit and reveal tools, the def2graph reader, the field list and an offline viewer | Partner |
-| `analysis/` | The headroom analysis and its results viewer. It is here so you can see what unsilo computes from your export | unsilo |
+| `analysis/` | An example analysis, `headroom.py`, and its results viewer. It shows the kind of work unsilo does on an export | unsilo |
 | `examples/sparse_mem_core/` | A synthetic 48-memory design, to try the skill on | Either |
 | `scripts/` | `package.sh` zips the skill for a partner who does not clone the repository | unsilo |
 
@@ -73,5 +73,5 @@ file with its open button. The file stays in the browser.
 
 - `skills/placehead-export/viewer.html` draws an export, or a graph with real names, on its
   floorplan: each port's logic cone, and each memory's wires.
-- `analysis/headroom_viewer.html` draws headroom results: every variant tried, its cost, and the
+- `analysis/headroom_viewer.html` draws the example analysis's results: every variant tried, its cost, and the
   moves from today's placement to it.

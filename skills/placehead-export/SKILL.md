@@ -1,13 +1,14 @@
 ---
 name: placehead-export
-description: Prepare a placed design for unsilo's placement headroom analysis, and explain exactly what data leaves your site. Use when the user wants to export a DEF for unsilo, check an export for sensitive data, review what the obfuscation hides and what it does not, or read unsilo's results with the real names.
+description: Prepare a placed design for unsilo's placement analysis, and explain exactly what data leaves your site. Use when the user wants to export a DEF for unsilo, check an export for sensitive data, review what the obfuscation hides and what it does not, or read unsilo's results with the real names.
 ---
 
 # placehead export kit
 
-unsilo's placement headroom analysis estimates how much shorter the paths between a design's
-ports and its memories can get with a few moves. It needs the placed design's connectivity and
-geometry. It does not need any name from the design.
+unsilo analyzes a client's placed design, with an analysis built for that client. For example,
+one analysis estimates how much shorter the paths between a design's ports and its memories get
+with a few moves. Each analysis needs the placed design's connectivity and geometry. None needs a
+name from the design.
 
 This kit runs on the design owner's machine. It reads the design, replaces every name with a
 meaningless token, checks the result, and writes one file to send to unsilo. The key that maps
@@ -40,7 +41,7 @@ These rules apply because anything you read or print in this session goes to the
 | `tools/audit.py` | Checks that the export holds no design names, and lists what it still shows | No |
 | `tools/reveal.py` | Puts real names back into a file that unsilo returns | No |
 | `tools/def2graph/` | Reads DEF, LEF and Liberty, and traces each port's logic cone | No |
-| `DATA.md` | Every field of the export: what it holds, and why the analysis needs it | No |
+| `DATA.md` | Every field of the export: what it holds, and why an analysis needs it | No |
 | `viewer.html` | unsilo's cone viewer: draws an export on its floorplan, offline | No |
 | `work/` (made by the tools) | The design's graph with real names, and the key | **Never** |
 | `export/` (made by the tools) | The export file only | **Yes, this one file** |
@@ -96,7 +97,7 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
    The user fills in `work/roles.json`. It holds the real bus names, so do not read it unless the
    user tells you to, and tell them that the bus names then enter this session.
 
-3. **Verify.** This shows that the analysis sees the same design:
+3. **Verify.** This shows that an analysis of the export sees the same design:
 
    ```bash
    python3 $KIT/tools/verify.py work/graph.json export/design.export.json --key work/key.json
@@ -123,7 +124,7 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
 7. **Read the results.** unsilo returns results that name tokens. Put the real names back:
 
    ```bash
-   python3 $KIT/tools/reveal.py headroom.json --key work/key.json -o work/headroom.revealed.json
+   python3 $KIT/tools/reveal.py results.json --key work/key.json -o work/results.revealed.json
    ```
 
 ## Options
@@ -131,12 +132,12 @@ inside the kit, so `work/` and `export/` sit with the design. Give the user each
 Explain these choices to the user, and let them decide. The defaults are unsilo's choices, not
 fixed rules.
 
-- `--profile headroom` (default) keeps only what the headroom analysis reads: the wires inside the
-  port cones, the cells on them, every memory and every port. `--profile full` keeps every wire.
-  The full profile also lets unsilo draw the wires outside the cones.
+- `--profile cones` (default) keeps only the wires inside the port cones, the cells on them,
+  every memory and every port. `--profile full` keeps every wire and every cell. unsilo tells the
+  user which profile their analysis needs. Use `cones` unless unsilo asked for `full`.
 - `--scale 1` (default) keeps lengths in um. `--scale random` multiplies every coordinate and
   length by one secret factor between 0.5 and 2, kept in the key. This hides the absolute die size
-  and cell heights. It gives limited protection: unsilo's analysis uses spacing rules in um, so the
+  and cell heights. It gives limited protection: an analysis may use spacing rules in um, so the
   user must tell unsilo the factor, or unsilo's results will be inexact. Ratios between sizes
   stay visible at any scale.
 - `--roles` (opt-in, off by default) sends a role for each bus the user chooses, from a fixed list:
