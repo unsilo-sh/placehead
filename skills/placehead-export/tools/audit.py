@@ -16,8 +16,8 @@ Checks:
 
 Then it lists what the export still shows: sizes, counts, geometry and connectivity.
 
-The report names no real design names. --show prints up to 20 of them for each failed check. Use it
-only on a screen you trust: anything printed in a Claude Code session goes to the model provider.
+The report names no real design names. --show prints up to 20 of the strings that failed each
+check, to find the cause.
 """
 import argparse
 import hashlib
@@ -227,7 +227,7 @@ def main(argv=None):
     ok = all(r["pass"] for r in R.results)
     R.say()
     R.say("RESULT: " + ("PASS. Nothing in the file is a name from the design." if ok else
-                        "FAIL. Do not send this file. Run with --show on a trusted screen to see why."))
+                        "FAIL. Do not send this file. Run with --show to see the strings that failed."))
     if args.json:
         Path(args.json).write_text(json.dumps({"file": path.name, "sha256": hashlib.sha256(blob).hexdigest(),
                                                "pass": ok, "checks": R.results}, indent=1))

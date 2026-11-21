@@ -22,8 +22,8 @@ between top-level pins and memories get with a few placement moves.
 | 7. Reveal | Partner | Partner's machine | Put the real names back into the results with the key |
 
 Steps 1 to 4 are one agent skill, `skills/placehead-export/`. `SKILL.md` holds the workflow: each
-command, each check, and the rules for which files may be read in an agent session. `DATA.md`
-describes every field of the export.
+command, each check, and the working rules it follows. `DATA.md` describes every field of the
+export.
 
 ## For the partner
 

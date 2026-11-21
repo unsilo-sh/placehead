@@ -28,8 +28,4 @@ These practices apply to the placement graph export. Each one points to where yo
 | What does the audit check? | `skills/placehead-export/tools/audit.py`, its first lines |
 | How are names replaced? | `skills/placehead-export/tools/obfuscate.py` |
 | What does unsilo compute from the export? | The analysis agreed for your engagement. `analysis/headroom.py` is an example |
-| What does Claude Code read, if you use the skill? | `skills/placehead-export/SKILL.md`, "Rules for you, in this session" |
-
-If you use Claude Code, anything it reads goes to your model provider, under your organization's
-terms with that provider. The skill tells Claude Code not to read your design files, the key or the
-roles file.
+| What does an agent do with the skill? | `skills/placehead-export/SKILL.md`: the workflow, and the working rules it follows |
