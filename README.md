@@ -73,3 +73,7 @@ file with its open button. The file stays in the browser.
   floorplan: each port's logic cone, and each memory's wires.
 - `analysis/headroom_viewer.html` draws the example analysis's results: every variant tried, its cost, and the
   moves from today's placement to it.
+
+## License
+
+MIT. See `LICENSE`.
